@@ -239,3 +239,71 @@ def generate_combined_explanation(model, sample: Dict[str, np.ndarray], device,
     # 기여 분해: 피처(IG) + 라우팅(게이트) = 전체 결정
     lines.append(f"─ 기여 분해: 피처(IG) {tot:+.2f} + 라우팅(게이트) {gap - tot:+.2f} = 결정 {gap:+.2f}")
     return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 보호자 자연어층 — 기술 XAI를 일상 언어 알림으로 번역 (연구 시연)
+# ═══════════════════════════════════════════════════════════════════════════
+# 배포 보호자 설명은 룰 결합기 쪽이 제공. 여기는 "학습형 모델의 XAI도 보호자
+# 언어까지 닿는다"의 평행 시연 — 기술 피처(gyro_peak…)를 평이어로 변환.
+
+_FEAT_PLAIN = {
+    "gyro_peak": "갑작스러운 회전", "gyro_energy": "회전 움직임", "jerk_peak": "강한 충격",
+    "smv_peak": "큰 충격", "smv_min": "자유낙하 정황", "impact_count": "반복된 충격",
+    "tilt_change": "자세 급변", "smv_std": "급격한 움직임",
+    "spo2_nadir": "산소 수치가 최저점까지 하강", "desat_rate": "산소가 빠르게 떨어짐",
+    "spo2_mean": "평균 산소 저하", "spo2_current": "현재 산소 저하",
+    "time_below_90": "산소 90% 미만 지속", "time_below_88": "산소 88% 미만 지속",
+}
+_CARDIAC_PLAIN = ["정상 리듬", "심방세동(불규칙한 맥박)", "급성 허혈 의심",
+                  "전도 장애", "이소성 박동(조기 수축)"]
+_CAREGIVER_ACTION = {
+    0: "현재 이상 징후는 없습니다.",
+    1: "활동 중으로 보이며 이상 징후는 없습니다.",
+    2: "안정을 취하시고, 가슴 통증·어지럼 등 증상이 있으면 의료진에게 연락하세요.",
+    3: "지금 안전한지, 다치지 않았는지 확인해 주세요.",
+    4: "호흡 상태를 확인하고, 어려우면 즉시 119에 연락하세요.",
+}
+
+
+def _plain_features(feats_list, topk: int = 2):
+    out = []
+    for name, val in feats_list[:topk]:
+        if abs(val) < 1e-3:
+            continue
+        out.append(_FEAT_PLAIN.get(name, name))
+    return out
+
+
+def generate_caregiver_message(model, sample: Dict[str, np.ndarray], device,
+                               steps: int = 64) -> str:
+    """보호자용 평이어 알림 — 3계층 XAI를 일상 언어로 번역."""
+    one = {k: np.asarray(sample[k])[None] for k in ("ecg_emb", "ecg_aux", "imu", "spo2", "mask")}
+    gw, cf, ul, pr = collect_gate(model, one, device)
+    pred = int(pr[0])
+    aux = np.asarray(sample["ecg_aux"])
+    ci, rel = int(np.argmax(aux[0:5])), float(aux[6])
+
+    head = {0: "이상 징후 없음", 1: "정상 활동 중",
+            2: f"심장 리듬 이상 의심 ({_CARDIAC_PLAIN[ci]})",
+            3: "낙상 감지", 4: "산소포화도 저하 감지"}[pred]
+    lines = [f"[알림] {head}."]
+
+    if pred == 3:
+        _, feats = aggregate_attribution(integrated_gradients(model, sample, pred, device, steps))
+        ev = ", ".join(_plain_features(feats["IMU"]))
+        why = f"움직임 센서에서 {ev} 신호가 포착되었습니다." if ev else "움직임에서 낙상 패턴이 감지되었습니다."
+        if ci == 0:
+            why += " 심장 박동은 정상이었습니다."
+        lines.append(why)
+    elif pred == 4:
+        _, feats = aggregate_attribution(integrated_gradients(model, sample, pred, device, steps))
+        ev = ", ".join(_plain_features(feats["SpO2"]))
+        lines.append(f"{ev} 현상이 나타났습니다." if ev else "산소포화도가 낮게 측정되었습니다.")
+    elif pred == 2:
+        lines.append(f"심전도에서 {_CARDIAC_PLAIN[ci]} 소견이 나타났습니다.")
+        if rel > 0.6:
+            lines.append("다만 측정 신호 품질이 낮아 정확하지 않을 수 있습니다 — 안정 후 재측정을 권합니다.")
+
+    lines.append("→ " + _CAREGIVER_ACTION[pred])
+    return "\n".join(lines)
