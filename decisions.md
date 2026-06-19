@@ -1,6 +1,6 @@
 # P2-A Late Fusion — 기록 인덱스
 
-> GitHub: `WidU_P2_A_Late_Fusion`
+> GitHub: `WidU_P2_A_Late-Fusion_XAI`
 > 데이터·출력은 환경변수 `P2_DATA_DIR`(기본 `data/`)로 지정 — 대용량이라 미추적.
 > 관련: `WidU_P1_LoRA-PEFT_Foundation-Model_Adaptation`
 >
