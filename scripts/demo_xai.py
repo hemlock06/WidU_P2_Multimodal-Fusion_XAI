@@ -24,8 +24,9 @@ from p2fusion.models.gated_fusion import GatedFusionModel
 from p2fusion.xai import (collect_gate, generate_combined_explanation,
                           generate_caregiver_message)
 
-CKPT  = r"data/checkpoints/p2_gated_11882/best_model.pt"
-DATA  = r"data/synthetic/p2_synth_v1_test.npz"
+_DD   = os.environ.get("P2_DATA_DIR", "data")
+CKPT  = os.path.join(_DD, "checkpoints", "p2_gated_11882", "best_model.pt")
+DATA  = os.path.join(_DD, "synthetic", "p2_synth_vf_test.npz")
 CLASS = ["정상안정", "정상활동", "심혈관", "낙상", "저산소"]
 EXPECTED_MOD = {2: 0, 3: 1, 4: 2}   # 심혈관→ECG, 낙상→IMU, 저산소→SpO2
 
@@ -34,7 +35,7 @@ def load_model():
     ck = torch.load(CKPT, map_location="cpu")
     a = ck["args"]
     m = GatedFusionModel(dropout=a["dropout"], aux_loss_weight=a["aux_weight"],
-                         reliability_mode=a["reliability_mode"], fusion_level=a["fusion_level"],
+                         fusion_level=a["fusion_level"],
                          gate_mode=a["gate_mode"], temperature=a["temperature"],
                          emb_bottleneck=a["emb_bottleneck"])
     m.load_state_dict(ck["model_state"]); m.eval()

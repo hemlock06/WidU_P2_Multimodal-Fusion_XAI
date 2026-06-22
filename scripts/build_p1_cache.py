@@ -11,8 +11,6 @@ P1이 ECG 인코더이므로, P2의 ECG 채널은 P1 출력을 그대로 쓴다.
     embedding        [N, 768]  ECG-FM mean-pool (raw)
     cardiac_probs    [N, 5]    softmax 심장 5분류
     emergency_score  [N]       sigmoid 응급 점수
-    reliability      [N]       sigmoid 신호불량 점수 (높을수록 불량)
-    gate_tier        [N]       int (0=use,1=mask,2=alert)
     hr_bpm           [N]       추정 심박수
     rhythm_regularity[N]       추정 리듬 규칙성
     label_mc         [N]       5-class (NSR=0,AF=1,Ischemia=2,Conduction=3,Ectopic=4)
@@ -32,15 +30,11 @@ from scipy.signal import find_peaks
 from torch.utils.data import DataLoader, Dataset
 
 # ── 경로 설정 ────────────────────────────────────────────────────────────────
-CKPT_FM   = r"../WidU_ecg-fm_emergency-detection/checkpoints/ecg-fm/mimic_iv_ecg_physionet_pretrained.pt"
-CKPT_P1   = r"../WidU_ecg-fm_emergency-detection/outputs/lora_multitask_snr_a07/lora_multitask_snr_best.pt"
-CKPT_GATE = r"../WidU_ecg-fm_emergency-detection/outputs/gate/gate_best.pt"
-DATA_DIR  = r"../WidU_ecg-fm_emergency-detection/data/processed/cpsc2018_mc"
-OUT_DIR   = r"data/p1_cache"
-
-# P1 게이트 임계값 (records/03_eval_results.md 확정값)
-T_MASK  = 0.2155
-T_ALERT = 0.4753
+P1_REPO   = os.environ.get("P1_REPO_DIR", "../WidU_ecg-fm_emergency-detection")
+CKPT_FM   = f"{P1_REPO}/checkpoints/ecg-fm/mimic_iv_ecg_physionet_pretrained.pt"
+CKPT_P1   = f"{P1_REPO}/outputs/lora_multitask_snr_a07/lora_multitask_snr_best.pt"
+DATA_DIR  = f"{P1_REPO}/data/processed/cpsc2018_mc"
+OUT_DIR   = str(Path(os.environ.get("P2_DATA_DIR", "data")) / "p1_cache")
 
 FS = 500  # ECG 샘플링레이트
 
@@ -102,13 +96,6 @@ class MulticlassHead(nn.Module):
         super().__init__()
         self.fc = nn.Linear(768, 5)
     def forward(self, x): return self.fc(x)
-
-
-class GateHead(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc = nn.Linear(768, 1)
-    def forward(self, x): return self.fc(x).squeeze(-1)
 
 
 # ── 데이터셋 ──────────────────────────────────────────────────────────────────
@@ -174,11 +161,7 @@ def main():
 
     # 게이트 가중치 로드
     print("게이트 가중치 로드 중...")
-    gate_ckpt = torch.load(CKPT_GATE, map_location=device)
-    gate_head = GateHead().to(device)
-    gate_head.load_state_dict(gate_ckpt["head_state"])
-
-    backbone.eval(); head_bin.eval(); head_mc.eval(); gate_head.eval()
+    backbone.eval(); head_bin.eval(); head_mc.eval()
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -187,7 +170,7 @@ def main():
         ds = CPSCDataset(os.path.join(DATA_DIR, split))
         loader = DataLoader(ds, batch_size=32, shuffle=False, num_workers=0)
 
-        all_emb, all_cp, all_es, all_rel, all_gt, all_lmc, all_lbin = [], [], [], [], [], [], []
+        all_emb, all_cp, all_es, all_lmc, all_lbin = [], [], [], [], []
 
         with torch.no_grad():
             for x, lmc, lbin in loader:
@@ -197,25 +180,18 @@ def main():
 
                 es  = torch.sigmoid(head_bin(emb)).cpu()
                 cp  = torch.softmax(head_mc(emb), dim=-1).cpu()
-                rel = torch.sigmoid(gate_head(emb)).cpu()
 
                 all_emb.append(emb.cpu().numpy().astype(np.float32))
                 all_cp.append(cp.numpy().astype(np.float32))
                 all_es.append(es.numpy().astype(np.float32))
-                all_rel.append(rel.numpy().astype(np.float32))
                 all_lmc.append(np.array(lmc))
                 all_lbin.append(np.array(lbin))
 
         emb_arr = np.concatenate(all_emb)
         cp_arr  = np.concatenate(all_cp)
         es_arr  = np.concatenate(all_es)
-        rel_arr = np.concatenate(all_rel)
         lmc_arr = np.concatenate(all_lmc).astype(np.int64)
         lbin_arr= np.concatenate(all_lbin).astype(np.int64)
-
-        # gate_tier 계산
-        gt_arr = np.where(rel_arr < T_MASK, 0,
-                 np.where(rel_arr < T_ALERT, 1, 2)).astype(np.int8)
 
         # 생리지표 추정
         print(f"  생리지표 추정 중...")
@@ -227,8 +203,6 @@ def main():
             embedding=emb_arr,
             cardiac_probs=cp_arr,
             emergency_score=es_arr,
-            reliability=rel_arr,
-            gate_tier=gt_arr,
             hr_bpm=hr_bpm,
             rhythm_regularity=rhythm_reg,
             label_mc=lmc_arr,
@@ -238,9 +212,7 @@ def main():
         # 요약
         print(f"  저장: {out_path}")
         print(f"  N={len(lmc_arr)}, emb={emb_arr.shape}, "
-              f"es_mean={es_arr.mean():.3f}, rel_mean={rel_arr.mean():.3f}")
-        print(f"  gate: use={int((gt_arr==0).sum())} mask={int((gt_arr==1).sum())} "
-              f"alert={int((gt_arr==2).sum())}")
+              f"es_mean={es_arr.mean():.3f}")
         mc_dist = {i: int((lmc_arr==i).sum()) for i in range(5)}
         print(f"  mc_dist: {mc_dist}")
 

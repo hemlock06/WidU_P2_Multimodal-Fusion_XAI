@@ -24,6 +24,7 @@ SisFall 파일 포맷:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -37,8 +38,8 @@ try:
 except Exception:
     pass
 
-DATA_DIR  = Path(r"data/raw/sisfall")
-OUT_DIR   = Path(r"data/interim")
+DATA_DIR  = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/sisfall"
+OUT_DIR   = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim"
 FS        = 200.0   # Hz
 
 # SisFall 가속도 단위 변환 (ADXL345 ±16g 모드: 512 LSB/g)

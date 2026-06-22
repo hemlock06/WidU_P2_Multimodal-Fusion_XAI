@@ -11,9 +11,9 @@
 
 | 항목 | 값 |
 |---|---|
-| 모델 | `p2_gated_11882` (GatedFusionModel, conf_routed, τ=0.15, emb_bottleneck=32, reliability=feature, fusion=feature) |
+| 모델 | `p2_gated_11882` (GatedFusionModel, conf_routed, τ=0.15, emb_bottleneck=32, fusion=feature) |
 | 평가셋 | `p2_synth_vf_test.npz` (N=**3525**, 5-class) — 모델 고정, baseline macro-F1 **0.9421** |
-| 피처 스키마 | 31개 = ECG(768→1 블록) + ecg_aux 10 + IMU 12 + SpO₂ 8 |
+| 피처 스키마 | 29개 = ECG(768→1 블록) + ecg_aux 8 + IMU 12 + SpO₂ 8 |
 | 비교 방법 | **SHAP**(PermutationExplainer, 캐시 재사용) · **IG**(Integrated Gradients, 재계산) · **permutation**(피처 셔플) |
 | 결측/제거 처리 | 해당 피처를 **background 평균값**(test 평균)으로 치환. ECG는 768차원 블록 일괄 치환. |
 | 재현 | `scripts/verify_shap_vs_ig.py` → `results/shap_vs_ig_verification.json` (신규 산출, 기존 파일 미수정) |

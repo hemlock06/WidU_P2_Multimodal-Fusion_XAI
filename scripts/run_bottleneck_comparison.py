@@ -125,7 +125,6 @@ def main():
             if bn == 0:
                 # no_emb: 병목 없이 학습하되 forward시 emb=0
                 model = GatedFusionModel(gate_mode="conf_routed",
-                                         reliability_mode="feature",
                                          emb_bottleneck=0).to(DEVICE)
                 # train_loader를 래핑해 emb를 0으로
                 class ZeroEmbLoader:
@@ -151,7 +150,6 @@ def main():
                 tp, tl = pred_noemb(model, test_ld)
             else:
                 model = GatedFusionModel(gate_mode="conf_routed",
-                                         reliability_mode="feature",
                                          emb_bottleneck=bn).to(DEVICE)
                 model, val_f1 = train_one(model, train_ld, val_ld,
                                           args.epochs, args.lr, seed)

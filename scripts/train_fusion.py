@@ -124,7 +124,6 @@ def train(args):
         model = GatedFusionModel(fusion_hidden=(256, 128),
                                  dropout=args.dropout,
                                  aux_loss_weight=args.aux_weight,
-                                 reliability_mode=args.reliability_mode,
                                  gate_input_norm=True,
                                  fusion_level=args.fusion_level,
                                  gate_mode=args.gate_mode,
@@ -249,9 +248,6 @@ def main():
                     help="modality dropout 비율 (학습 중 결측 시뮬레이션)")
     ap.add_argument("--aux-weight",  type=float, default=0.3,
                     help="unimodal 보조손실 가중치 (gated only)")
-    ap.add_argument("--reliability-mode", default="feature",
-                    choices=["none", "feature", "hard_mult"],
-                    help="reliability 통합 방식 (gated only)")
     ap.add_argument("--fusion-level", default="feature",
                     choices=["feature", "logit"],
                     help="feature: feature-weighted sum+MLP, logit: MoE probability mixing")
@@ -264,7 +260,7 @@ def main():
     ap.add_argument("--dataset-version", default="v1",
                     help="데이터셋 버전 (v1=독립샘플링, v2_mvn=MVN다변량, vf=누출없음)")
     ap.add_argument("--no-embedding", action="store_true",
-                    help="raw 768 ECG 임베딩 zero-out — ecg_aux(10) 점수만 사용. "
+                    help="raw 768 ECG 임베딩 zero-out — ecg_aux(8) 점수만 사용. "
                          "임베딩 과적합 진단용.")
     ap.add_argument("--emb-bottleneck", type=int, default=0,
                     help="ECG 임베딩 병목 차원 (0=기존 768→256→128, >0=768→N→128 + dropout0.5). "

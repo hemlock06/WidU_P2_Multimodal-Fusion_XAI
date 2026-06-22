@@ -1,7 +1,7 @@
 """late fusion 게이트 XAI — gated fusion 판정 근거 추출·설명.
 
 GatedFusionModel은 forward마다 다음을 내보낸다(P3 활용 목적 설계):
-  gate_weights[B,3]      동적 모달 가중치 (ecg·imu·spo2) — 게이트넷 산출(≠reliability)
+  gate_weights[B,3]      동적 모달 가중치 (ecg·imu·spo2) — 게이트넷 산출
   conf_per_modality[B,3] 각 expert 확신도 (단독 softmax max)
   unimodal_logits[B,3,5] 각 모달 독립 5분류 예측
 
@@ -23,8 +23,7 @@ from p2fusion.schema import IMU_FEATURES, SPO2_FEATURES
 MOD = ["ECG", "IMU", "SpO2"]
 _CLASS_KO = ["정상(안정)", "정상(활동)", "심혈관 응급", "낙상·충격", "저산소"]
 _CLASS_PRIMARY_MOD = [None, "IMU", "ECG", "IMU", "SpO2"]
-# ecg_aux: 0-4 cardiac_probs, 5 emergency_score, 6 reliability, 7 gate_tier, 8 hr, 9 rhythm
-_AUX_REL = 6
+# ecg_aux: 0-4 cardiac_probs, 5 emergency_score, 6 hr_bpm, 7 rhythm_regularity
 
 
 def _to_batch(arrays: Dict[str, np.ndarray], device) -> Dict[str, torch.Tensor]:
@@ -75,12 +74,11 @@ def generate_gate_explanation(pred_class: int,
                               conf: np.ndarray,
                               unimodal_logits: np.ndarray,
                               ecg_aux: np.ndarray) -> str:
-    """단일 판정 자연어 설명 — gate_weights[3]·conf[3]·unimodal_logits[3,5]·ecg_aux[10].
+    """단일 판정 자연어 설명 — gate_weights[3]·conf[3]·unimodal_logits[3,5].
 
     pred_class: 0정상안정 1정상활동 2심혈관 3낙상 4저산소
     """
     dom = int(np.argmax(gate_w))
-    rel = float(ecg_aux[_AUX_REL])
     uni_votes = [_CLASS_KO[int(np.argmax(unimodal_logits[i]))] for i in range(3)]
 
     lines = [f"[판정] {_CLASS_KO[pred_class]}"]
@@ -93,10 +91,6 @@ def generate_gate_explanation(pred_class: int,
     expected = _CLASS_PRIMARY_MOD[pred_class]
     if expected and MOD[dom] != expected:
         lines.append(f"     (기대 1차모달 {expected}와 불일치 — 결측/신호불량으로 게이트가 대체 모달 선택)")
-
-    # 신호불량 주의
-    if rel > 0.6 and dom == 0:
-        lines.append(f"[주의] ECG 주도이나 reliability {rel:.2f} 높음(신호 불량) — 판정 신뢰도 낮음, 재확인 권고.")
 
     return "\n".join(lines)
 
@@ -121,7 +115,7 @@ def gate_report(model, arrays_by_group: Dict[str, Dict[str, np.ndarray]], device
 #       민감도를 귀속(게이트 라우팅 기여는 별도 게이트 XAI가 설명). 완결성 갭은 이 때문.
 
 _AUX_NAMES = ["p_nsr", "p_af", "p_isch", "p_cond", "p_ecto",
-              "emergency_score", "reliability", "gate_tier", "hr_bpm", "rhythm_reg"]
+              "emergency_score", "hr_bpm", "rhythm_reg"]
 _IG_KEYS = ["ecg_emb", "ecg_aux", "imu", "spo2"]
 
 
@@ -129,7 +123,7 @@ def integrated_gradients(model, sample: Dict[str, np.ndarray], target: int, devi
                          steps: int = 64, baseline=None) -> Dict[str, np.ndarray]:
     """단일 샘플 IG 귀속 → {key: attr[dim]}.
 
-    sample: {ecg_emb[768]·ecg_aux[10]·imu[12]·spo2[8]·mask[3]}. baseline=None → 0 기준.
+    sample: {ecg_emb[768]·ecg_aux[8]·imu[12]·spo2[8]·mask[3]}. baseline=None → 0 기준.
     """
     model.eval()
     x = {k: torch.as_tensor(sample[k], dtype=torch.float32, device=device) for k in _IG_KEYS}

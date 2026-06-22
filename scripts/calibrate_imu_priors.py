@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import glob
+import os
 import sys
 from pathlib import Path
 
@@ -32,9 +33,9 @@ try:
 except Exception:
     pass
 
-PTT_DIR  = Path(r"data/raw/ptt_ppg")
-SISFALL  = Path(r"data/interim/sisfall_imu_features.npz")
-OUT      = Path(r"data/interim/imu_calibration.npz")
+PTT_DIR  = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
+SISFALL  = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim/sisfall_imu_features.npz"
+OUT      = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim/imu_calibration.npz"
 
 FS_TARGET = 200.0
 WIN_SEC   = 3.0

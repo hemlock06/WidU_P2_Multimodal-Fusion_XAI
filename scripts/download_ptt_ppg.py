@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://physionet.org/files/pulse-transit-time-ppg/1.1.0/"
-OUT_DIR  = Path(r"data/raw/ptt_ppg")
+OUT_DIR  = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 

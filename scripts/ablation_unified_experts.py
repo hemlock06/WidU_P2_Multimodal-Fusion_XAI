@@ -76,7 +76,7 @@ def train_one(unified, seed, epochs=80, ver="vf", lr=3e-4):
 
     model = GatedFusionModel(
         fusion_hidden=(256, 128), dropout=0.3, aux_loss_weight=0.3,
-        reliability_mode="feature", gate_input_norm=True, fusion_level="feature",
+        gate_input_norm=True, fusion_level="feature",
         gate_mode="conf_routed", temperature=0.15, emb_bottleneck=32,
         unified_experts=unified).to(DEV)
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-4)

@@ -5,7 +5,7 @@
   [IMU 12]      ──► IMU expert    (12→64→128) ► imu_head → conf_imu   ├──► gate_net → gate_w
   [SpO2 8]      ──► SpO2 expert   (8→32→128) ► spo2_head → conf_spo2  ┘           ↓
                                                                            gate_w-weighted sum
-       게이팅 입력: [ecg_aux(10) + mask(3) + conf(3)] = 16-dim            → fusion MLP → 5클래스
+       게이팅 입력: [ecg_aux(8) + mask(3) + conf(3)] = 14-dim            → fusion MLP → 5클래스
        conf_m = max(softmax(unimodal_logits_m)).detach()
                결측 expert → 0-feat → 균등 softmax → conf ≈ 0.2 (낮음)
                → 게이트가 자동 down-weight, 별도 -inf 마스킹과 이중 보호
@@ -24,19 +24,9 @@ from torch import Tensor
 
 from p2fusion.schema import EMB_DIM, IMU_DIM, SPO2_DIM, NUM_CLASSES
 
-ECG_AUX_DIM = 10
+ECG_AUX_DIM = 8       # schema.flat_ecg_aux: cardiac_probs[5] + emergency_score·hr_bpm·rhythm_regularity
 EXPERT_DIM   = 128   # 모달리티별 공통 expert 출력 차원
 GATE_IN_DIM  = ECG_AUX_DIM + 3 + 3  # ecg_aux + modality_mask + conf(3)
-
-# ecg_aux 인덱스 (schema.flat_ecg_aux 순서)
-AUX_RELIABILITY = 6   # 0-4 cardiac_probs, 5 emergency_score, 6 reliability,
-                      # 7 gate_tier, 8 hr_bpm, 9 rhythm_regularity
-
-# reliability 사용 모드
-#   "none"      : reliability 미사용 (게이트 입력에서 0 처리, ECG 하드곱 없음)
-#   "feature"   : reliability를 게이트넷 입력으로만 사용 (하드곱 없음) ← 권장 가설
-#   "hard_mult" : ECG 피처에 (1-reliability) 직접 곱 + 게이트넷 입력 (기존 설계)
-RELIABILITY_MODES = ("none", "feature", "hard_mult")
 
 
 def _mlp(in_dim: int, hidden: Tuple[int, ...], out_dim: int,
@@ -77,7 +67,6 @@ class GatedFusionModel(nn.Module):
         dropout: float = 0.3,
         aux_loss_weight: float = 0.3,
         num_classes: int = NUM_CLASSES,
-        reliability_mode: str = "feature",
         gate_input_norm: bool = True,
         fusion_level: str = "feature",
         gate_mode: str = "learned",
@@ -92,15 +81,12 @@ class GatedFusionModel(nn.Module):
         temperature: conf_routed 모드의 softmax 온도 (낮을수록 winner-take-all)
         """
         super().__init__()
-        if reliability_mode not in RELIABILITY_MODES:
-            raise ValueError(f"reliability_mode must be one of {RELIABILITY_MODES}")
         if fusion_level not in ("feature", "logit"):
             raise ValueError(f"fusion_level must be 'feature' or 'logit'")
         if gate_mode not in ("learned", "conf_routed"):
             raise ValueError(f"gate_mode must be 'learned' or 'conf_routed'")
         self.aux_loss_weight = aux_loss_weight
         self.num_classes = num_classes
-        self.reliability_mode = reliability_mode
         self.gate_input_norm = gate_input_norm
         self.fusion_level = fusion_level
         self.gate_mode = gate_mode
@@ -174,19 +160,13 @@ class GatedFusionModel(nn.Module):
           "conf_per_modality" [B, 3]    — 각 expert 확신도 (max softmax, detached)
         """
         ecg_emb = batch["ecg_emb"]   # [B, 768]
-        ecg_aux = batch["ecg_aux"]   # [B, 10]
+        ecg_aux = batch["ecg_aux"]   # [B, 8]
         imu     = batch["imu"]       # [B, 12]
         spo2    = batch["spo2"]      # [B, 8]
         mask    = batch["mask"]      # [B, 3]  (ecg, imu, spo2)
 
-        reliability = ecg_aux[:, AUX_RELIABILITY:AUX_RELIABILITY + 1]  # [B,1]
-
         # ── Step 1: Expert 표현 계산 ──
-        if self.reliability_mode == "hard_mult":
-            ecg_soft_w = (1.0 - reliability) * mask[:, 0:1]
-        else:
-            ecg_soft_w = mask[:, 0:1]
-        ecg_feat  = self.ecg_proj(ecg_emb) * ecg_soft_w          # [B,128]
+        ecg_feat  = self.ecg_proj(ecg_emb) * mask[:, 0:1]        # [B,128]
         imu_feat  = self.imu_expert(imu  * mask[:, 1:2])          # [B,128]
         spo2_feat = self.spo2_expert(spo2 * mask[:, 2:3])         # [B,128]
 
@@ -207,11 +187,7 @@ class GatedFusionModel(nn.Module):
             # conf/τ → softmax. 결측 모달리티는 -inf 제외.
             gate_raw = conf / self.temperature                     # [B,3]
         else:
-            aux_for_gate = ecg_aux
-            if self.reliability_mode == "none":
-                aux_for_gate = ecg_aux.clone()
-                aux_for_gate[:, AUX_RELIABILITY] = 0.0
-            gate_in  = torch.cat([aux_for_gate, mask, conf], dim=-1)  # [B,16]
+            gate_in  = torch.cat([ecg_aux, mask, conf], dim=-1)      # [B,14]
             gate_in  = self.gate_in_norm(gate_in)
             gate_raw = self.gate_net(gate_in)                          # [B,3]
 

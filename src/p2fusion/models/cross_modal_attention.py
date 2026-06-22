@@ -13,8 +13,8 @@ Cross-Modal Attention으로 해결:
   → attention_weights → P3 XAI: "이 판정에서 어떤 모달리티가 어디 주목했나"
 
 P1 점수 실사용:
-  ECG 토큰 = [emb_bn16(16) + ecg_aux(10)] = 26차원 → Linear(26→d_model)
-  emergency_score, reliability, cardiac_probs 전부 ECG 토큰에 포함
+  ECG 토큰 = [emb_bn16(16) + ecg_aux(8)] = 24차원 → Linear(24→d_model)
+  emergency_score, cardiac_probs 전부 ECG 토큰에 포함
 
 아키텍처:
   3개 토큰 [ECG, IMU, SpO2] → TransformerEncoder(2 layer, 4 head, d=128)
@@ -35,10 +35,10 @@ from torch import Tensor
 from p2fusion.schema import EMB_DIM, IMU_DIM, SPO2_DIM, NUM_CLASSES
 
 # ecg_aux 구성 (schema.flat_ecg_aux 순서)
-# [cardiac_probs×5, emergency_score, reliability, gate_tier, hr_bpm, rhythm_regularity]
-ECG_AUX_DIM  = 10
+# [cardiac_probs×5, emergency_score, hr_bpm, rhythm_regularity]
+ECG_AUX_DIM  = 8
 ECG_BN_DIM   = 16   # 병목 임베딩 차원 (과적합 방지 확정값)
-ECG_TOK_DIM  = ECG_BN_DIM + ECG_AUX_DIM   # ECG 토큰 입력 = 26
+ECG_TOK_DIM  = ECG_BN_DIM + ECG_AUX_DIM   # ECG 토큰 입력 = 24
 D_MODEL      = 128   # Transformer hidden dim
 N_HEADS      = 4
 N_LAYERS     = 2
@@ -93,7 +93,7 @@ class CrossModalAttentionFusion(nn.Module):
         )
 
         # ── 모달리티별 토큰 투영 ─────────────────────────────────────────────
-        # ECG 토큰: [emb_bn(16) + ecg_aux(10)] = 26 → d_model
+        # ECG 토큰: [emb_bn(16) + ecg_aux(8)] = 24 → d_model
         ecg_tok_in = emb_bottleneck + ECG_AUX_DIM
         self.ecg_proj  = nn.Sequential(
             nn.Linear(ecg_tok_in, d_model),
@@ -143,7 +143,7 @@ class CrossModalAttentionFusion(nn.Module):
         """
         입력 (GatedFusionModel과 동일 인터페이스):
           batch["ecg_emb"]  [B, 768]
-          batch["ecg_aux"]  [B, 10]   cardiac_probs(5)+emergency+reliability+gate_tier+hr+rhythm
+          batch["ecg_aux"]  [B, 8]    cardiac_probs(5)+emergency+hr+rhythm
           batch["imu"]      [B, 12]
           batch["spo2"]     [B, 8]
           batch["mask"]     [B, 3]    (ecg, imu, spo2) 모달리티 가용성
@@ -156,7 +156,7 @@ class CrossModalAttentionFusion(nn.Module):
           "conf_per_modality"  [B, 3]     unimodal 확신도 (분석용)
         """
         ecg_emb = batch["ecg_emb"]   # [B, 768]
-        ecg_aux = batch["ecg_aux"]   # [B, 10]
+        ecg_aux = batch["ecg_aux"]   # [B, 8]
         imu     = batch["imu"]       # [B, 12]
         spo2    = batch["spo2"]      # [B, 8]
         mask    = batch["mask"]      # [B, 3]

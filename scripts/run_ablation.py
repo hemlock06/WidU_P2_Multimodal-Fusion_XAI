@@ -1,6 +1,5 @@
-"""P2 게이트/reliability 통합 방식 ablation.
+"""P2 융합 ablation — 게이팅 융합 vs 단순 concat 베이스라인.
 
-목적: P1 reliability 게이트를 융합에 어떻게 넣는 게 최선인지 통제 실험으로 결정.
 모든 변형을 동일 데이터·시드·에폭으로 학습 후
   (1) 깨끗한 test macro-F1 + per-class recall
   (2) 결측 시나리오(ECG/IMU/SpO2 각각 제거) macro-F1
@@ -40,19 +39,15 @@ DEVICE   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # 실험 변형 정의
 # ─────────────────────────────────────────────────────────────────────────────
 #   factory(args) -> model
-def _gated(reliability_mode, gate_input_norm, aux=0.3):
+def _gated(gate_input_norm=True, aux=0.3):
     def f(a):
-        return GatedFusionModel(reliability_mode=reliability_mode,
-                                gate_input_norm=gate_input_norm,
+        return GatedFusionModel(gate_input_norm=gate_input_norm,
                                 dropout=a.dropout, aux_loss_weight=aux)
     return f
 
 VARIANTS = {
-    "E0_concat":         (lambda a: ConcatMLP(dropout_p=a.dropout), "ConcatMLP 베이스라인 (게이트 없음)"),
-    "E1_gate_norel":     (_gated("none",      True),  "Gated, reliability 미사용"),
-    "E2_gate_relfeat":   (_gated("feature",   True),  "Gated, reliability=게이트넷 입력 (권장 가설)"),
-    "E3_gate_hardmult":  (_gated("hard_mult", True),  "Gated, ECG×(1-rel) 하드곱 (기존 설계)"),
-    "E4_gate_hard_nonorm": (_gated("hard_mult", False), "Gated, 하드곱 + 게이트입력 정규화 OFF"),
+    "E0_concat": (lambda a: ConcatMLP(dropout_p=a.dropout), "ConcatMLP 베이스라인 (게이트 없음)"),
+    "E1_gated":  (_gated(),  "Confidence-Gated Fusion"),
 }
 
 

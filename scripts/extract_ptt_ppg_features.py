@@ -23,6 +23,7 @@ PTT-PPG (PhysioNet pulse-transit-time-ppg v1.1.0):
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -37,8 +38,8 @@ try:
 except Exception:
     pass
 
-DATA_DIR = Path(r"data/raw/ptt_ppg")
-OUT_DIR  = Path(r"data/interim")
+DATA_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
+OUT_DIR  = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim"
 FS       = 500.0   # Hz
 
 # 활동 → P2 클래스

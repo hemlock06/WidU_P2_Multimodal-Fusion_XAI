@@ -20,7 +20,7 @@ rng = np.random.default_rng(0)
 # ── 모델·데이터 (읽기전용) ──
 ck = torch.load(str(P2 / "checkpoints" / "p2_gated_11882" / "best_model.pt"), map_location="cpu", weights_only=False)
 a = ck["args"]
-m = GatedFusionModel(dropout=a["dropout"], aux_loss_weight=a["aux_weight"], reliability_mode=a["reliability_mode"],
+m = GatedFusionModel(dropout=a["dropout"], aux_loss_weight=a["aux_weight"],
                      fusion_level=a["fusion_level"], gate_mode=a["gate_mode"], temperature=a["temperature"], emb_bottleneck=a["emb_bottleneck"])
 m.load_state_dict(ck["model_state"]); m.eval()
 d = np.load(str(P2 / "synthetic" / "p2_synth_vf_test.npz"))

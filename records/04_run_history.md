@@ -19,7 +19,7 @@
 ## 2026-05-30 — 단계 1: 클래스 조건부 조립기 (방법 A) 구축 + 1단계 합성셋
 
 **구현**
-- `src/p2fusion/schema.py` — 통합 멀티모달 샘플 스키마 (emb768 + ecg_aux10 + imu12 + spo2_8)
+- `src/p2fusion/schema.py` — 통합 멀티모달 샘플 스키마 (emb768 + ecg_aux8 + imu12 + spo2_8)
 - `src/p2fusion/synth/class_priors.py` — 5클래스 문헌 캘리브레이션 사전분포 (IMU/SpO2/ECG)
 - `src/p2fusion/synth/assembler.py` — 조건부 독립 조립 + 측정노이즈(0.35×std) + hard case(12%)
 - `scripts/build_synthetic_dataset.py` — train/val/test npz 생성
@@ -138,8 +138,8 @@ conf-routed 채택. 상세: `01_design_decisions.md §3`. 3시드로 확정.
 - rest/active/impact/hypoxia: 0.81~0.83 (P1 test NSR 130개 — train NSR 776개와 분포 차이)
 - 진단: NSR 768차원 임베딩이 비심장 분류에 과적합 → P1 점수만 쓰는 --no-embedding 가설
 
-### 임베딩 제거 실험 (진행 중)
-vf 데이터셋에서 raw 768 임베딩 유무 비교 → val/test 격차 닫히면 임베딩 제거 확정
+### 임베딩 과적합 — 병목으로 해소
+vf 데이터셋에서 raw 768 임베딩 유무를 비교한 결과, 임베딩을 제거하는 대신 16/32차원 병목 인코더로 과적합을 해소했다(val/test 격차 0.10→0.007). 임베딩 유지 + 병목 채택.
 
 ---
 

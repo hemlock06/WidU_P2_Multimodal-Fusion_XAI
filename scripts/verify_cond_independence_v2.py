@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -24,9 +25,9 @@ try:
 except Exception:
     pass
 
-INTERIM_DIR = Path(r"data/interim")
-SYNTH_DIR   = Path(r"data/synthetic")
-PTT_DIR     = Path(r"data/raw/ptt_ppg")
+INTERIM_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim"
+SYNTH_DIR   = Path(os.environ.get("P2_DATA_DIR", "data")) / "synthetic"
+PTT_DIR     = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
 
 from p2fusion.schema import IMU_FEATURES
 

@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -28,8 +29,8 @@ try:
 except Exception:
     pass
 
-INTERIM_DIR = Path(r"data/interim")
-SYNTH_DIR   = Path(r"data/synthetic")
+INTERIM_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim"
+SYNTH_DIR   = Path(os.environ.get("P2_DATA_DIR", "data")) / "synthetic"
 
 from p2fusion.schema import IMU_FEATURES, CLASS_NAMES
 
@@ -113,7 +114,7 @@ def main():
 
     # PTT-PPG에서 HR 채널 확인
     import wfdb
-    DATA_DIR = Path(r"data/raw/ptt_ppg")
+    DATA_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
     hea_files = sorted(DATA_DIR.glob("*.hea"))[:5]  # 샘플 5개만 확인
     print("\n  HR 채널 탐색 (샘플 레코드):")
     hr_vals, smv_std_vals, labels_hr = [], [], []

@@ -30,8 +30,6 @@ P1_output = {
     "cardiac_probs":   List[float],  # 길이 5 [NSR, AF, Ischemia, Conduction, Ectopic]
     "emergency_score": float,        # 0~1 (AUROC=0.914)
     "embedding":       List[float],  # 길이 768, ECG-FM mean-pool (raw, 비정규화)
-    "reliability":     float,        # 0~1, ECG 신호 신뢰도 (높을수록 불량)
-    "gate_tier":       str,          # "use" | "mask" | "alert"
     "physio":          {"hr_bpm": float, "rhythm_regularity": float},
     "model_version":   str,
     "inference_ms":    float,
@@ -100,17 +98,14 @@ P1_output = {
 ## 4. 아키텍처 (✅ 권장안 확정 — Gated Late Fusion)
 
 ```
-[ECG]  P1_output ──► ECG 투영(768→128) × reliability 게이트 ┐
-[IMU]  raw/feat ───► IMU 인코더(→128)                       ├─► 게이팅 네트워크
-[SpO2] feat ───────► SpO2 인코더(→32→128)                   │   (reliability + 모달리티 가용성)
-                                                            │        │ w_m
-                                                            └────────► 가중합 fusion ─► MLP ─► 5분류
-                       (각 모달리티 unimodal logits 보조손실)
+[ECG]  P1 임베딩(768) ──► 인코더 768→32→128 ┐
+[IMU]  feat(12) ────────► 인코더 12→32→128  ├─► 게이팅(conf 라우팅) ─► 가중합 fusion ─► MLP ─► 5분류
+[SpO2] feat(8) ─────────► 인코더 8→32→128   ┘
+                       (단일 구조: 세 인코더 동일 병목 in→32→128 · 각 모달 unimodal logits 보조손실)
 ```
 
 - **권장**: Gated Late Fusion (메인) / Concat MLP (베이스라인) / Cross-modal Attention (상위 비교군)
-- **근거**: 결측 강건성(late fusion), P1 `reliability`/`gate_tier` 자연 결합, 데이터 효율, 해석성(P3 연결)
-- `gate_tier`: mask→ECG 결측 처리, alert→응급 우선 라우팅, use→정상 가중
+- **근거**: 결측 강건성(late fusion), 데이터 효율, 해석성(P3 연결)
 - 파라미터 ~0.3–1M, RTX 3060 12GB 여유
 
 ---
@@ -119,10 +114,10 @@ P1_output = {
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
-| Pre-flight | 데이터 전략 확정 | ✅ 완료 (2026-05-30) |
-| 1 | src 구조 + 피처 스키마 + 클래스 조건부 조립기 (방법 A) | 🔄 진행 중 |
-| 2 | 실데이터 다운로드(SisFall/Harespod/PTT-PPG) + 분포 정합 | 미시작 |
-| 3 | 융합 모델 (concat 베이스라인 → gated) + 학습 파이프라인 | 미시작 |
-| 4 | 평가 (macro-F1, per-class recall, 혼동쌍, 결측 강건성 곡선) | 미시작 |
-| 5 | 인코더 사전학습 + modality-dropout (2단계 현실화) | 미시작 |
-| 6 | P2→P3 인터페이스 명세 | 미시작 |
+| Pre-flight | 데이터 전략 확정 | ✅ 완료 |
+| 1 | src 구조 + 피처 스키마 + 클래스 조건부 조립기 (방법 A) | ✅ 완료 |
+| 2 | 실데이터(SisFall/PTT-PPG) 다운로드 + 분포 정합 | ✅ 완료 |
+| 3 | 융합 모델 (concat 베이스라인 → gated) + 학습 파이프라인 | ✅ 완료 |
+| 4 | 평가 (macro-F1, per-class recall, 혼동쌍, 결측 강건성 곡선) | ✅ 완료 |
+| 5 | 인코더 사전학습 + modality-dropout (2단계 현실화) | 후속 |
+| 6 | P2→P3 인터페이스 명세 | 후속 |

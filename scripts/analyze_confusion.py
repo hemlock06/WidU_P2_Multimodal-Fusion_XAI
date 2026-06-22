@@ -42,7 +42,6 @@ def load_model(ckpt_path: str):
         model = ConcatMLP()
     else:
         model = GatedFusionModel(
-            reliability_mode=args.get("reliability_mode", "feature"),
             gate_input_norm=args.get("gate_input_norm", True),
             fusion_level=args.get("fusion_level", "feature"),
             gate_mode=args.get("gate_mode", "learned"),

@@ -1,6 +1,6 @@
 # P2-A Late Fusion — 기록 인덱스
 
-> GitHub: `WidU_P2_A_Late-Fusion_XAI`
+> GitHub: `WidU_P2_Multimodal-Fusion_XAI`
 > 데이터·출력은 환경변수 `P2_DATA_DIR`(기본 `data/`)로 지정 — 대용량이라 미추적.
 > 관련: `WidU_P1_LoRA-PEFT_Foundation-Model_Adaptation`
 >
@@ -41,8 +41,6 @@ P1_output = {
     "cardiac_probs":   List[float],  # 길이 5 [NSR, AF, Ischemia, Conduction, Ectopic]
     "emergency_score": float,        # 0~1, 이진 응급 확률 (AUROC=0.914)
     "embedding":       List[float],  # 길이 768, ECG-FM mean-pool
-    "reliability":     float,        # 0~1, ECG 신호 신뢰도
-    "gate_tier":       str,          # "use" | "mask" | "alert"
     "physio": {"hr_bpm": float, "rhythm_regularity": float},
     "model_version":   str,
     "inference_ms":    float,
@@ -69,7 +67,7 @@ P1_output = {
 |---|---|
 | 데이터 전략 | 동시측정 데이터 부재 → 클래스 조건부 조립(방법 A) — `records/01 §1` |
 | 전처리 정합 | IMU 200Hz·3초 통일 + 5클래스 실측 재보정 — `records/01·04` |
-| 융합 아키텍처 | concat(베이스라인) / 학습형 게이팅(붕괴) / **신뢰도 라우팅(채택)** — 3시드 val 0.947±.001 / test 0.935±.002 (τ ablation: 성능은 τ에 둔감, τ는 라우팅 sharpness 노브) |
+| 융합 아키텍처 | concat(베이스라인) / 학습형 게이팅(붕괴) / **confidence 라우팅(채택)** — 3시드 val 0.947±.001 / test 0.935±.002 (τ ablation: 성능은 τ에 둔감, τ는 라우팅 sharpness 노브) |
 | 정직성 검증 | 누수 3종 교정(임베딩 90.5% · bootstrap 근접 · 고차원 과적합) → 보정 후 **macro-F1 0.94** — `records/03` |
 | **핵심 한계** | 조건부 독립 조립은 교차모달 시간 대응을 담지 못함 → 융합 정교화의 효용이 제한됨 |
 | 함의 | 교차모달 학습은 실 정렬 데이터 필요(P2-B) / 신뢰 가능 시스템은 실데이터 검증 검출기 + 투명 결합 |

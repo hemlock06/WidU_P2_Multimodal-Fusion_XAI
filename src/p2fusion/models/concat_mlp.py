@@ -2,11 +2,10 @@
 
 입력 차원:
   ecg_emb : 768
-  ecg_aux : 10   (cardiac_probs x5, emergency_score, reliability,
-                   gate_tier, hr_bpm, rhythm_regularity)
+  ecg_aux :  8   (cardiac_probs x5, emergency_score, hr_bpm, rhythm_regularity)
   imu     : 12
   spo2    :  8
-  총       : 798
+  총       : 796
 
 모달리티 드롭아웃: 마스크 값(0/1)을 해당 피처 벡터에 곱해서 결측 시뮬레이션.
 """
@@ -20,8 +19,8 @@ from torch import Tensor
 
 from p2fusion.schema import EMB_DIM, IMU_DIM, SPO2_DIM, NUM_CLASSES
 
-ECG_AUX_DIM = 10
-INPUT_DIM = EMB_DIM + ECG_AUX_DIM + IMU_DIM + SPO2_DIM  # 798
+ECG_AUX_DIM = 8
+INPUT_DIM = EMB_DIM + ECG_AUX_DIM + IMU_DIM + SPO2_DIM  # 796
 
 
 class ConcatMLP(nn.Module):
@@ -52,10 +51,10 @@ class ConcatMLP(nn.Module):
     def forward(self, batch: Dict[str, Tensor]) -> Tensor:
         # 마스크 적용 (결측 모달리티 → 0벡터)
         ecg_emb = batch["ecg_emb"] * batch["mask"][:, 0:1]    # [B,768]
-        ecg_aux = batch["ecg_aux"] * batch["mask"][:, 0:1]    # [B,10]
+        ecg_aux = batch["ecg_aux"] * batch["mask"][:, 0:1]    # [B,8]
         imu     = batch["imu"]     * batch["mask"][:, 1:2]    # [B,12]
         spo2    = batch["spo2"]    * batch["mask"][:, 2:3]    # [B,8]
 
-        x = torch.cat([ecg_emb, ecg_aux, imu, spo2], dim=-1)  # [B,798]
+        x = torch.cat([ecg_emb, ecg_aux, imu, spo2], dim=-1)  # [B,796]
         x = self.input_norm(x)
         return self.mlp(x)                                     # [B,5]

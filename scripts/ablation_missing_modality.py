@@ -47,7 +47,7 @@ def build(method, seed):
     if method == "conf_gated":
         return GatedFusionModel(
             fusion_hidden=(256, 128), dropout=0.3, aux_loss_weight=0.3,
-            reliability_mode="feature", gate_input_norm=True, fusion_level="feature",
+            gate_input_norm=True, fusion_level="feature",
             gate_mode="conf_routed", temperature=0.15, emb_bottleneck=32)
     return ConcatMLP(hidden_dims=(512, 256, 128), dropout_p=0.3)
 

@@ -12,16 +12,14 @@
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Dict, Tuple
 
 import numpy as np
 
 from p2fusion.schema import (CARDIAC_PROB_NAMES, IMU_FEATURES, NUM_CARDIAC,
                              SPO2_FEATURES)
-
-# P1 게이트 임계값 (P1 records/03_eval_results.md 확정값)
-T_MASK = 0.2155
-T_ALERT = 0.4753
 
 Spec = Tuple[float, float, float, float]  # (mean, std, lo, hi)
 
@@ -124,20 +122,20 @@ SPO2_PRIORS: Dict[int, Dict[str, Spec]] = {
 
 # ---------------------------------------------------------------------------
 # ECG 보조값 사전분포 (P1 출력 모사). embedding은 assembler에서 클래스별 가우시안.
-# (emergency_score, reliability, hr_bpm, rhythm_regularity) + cardiac_probs 피크
+# (emergency_score, hr_bpm, rhythm_regularity) + cardiac_probs 피크
 # ---------------------------------------------------------------------------
 # ※ emergency_score는 P1의 불완전성(AUROC=0.914)을 반영해 클래스 간 중첩 부여.
 #   심혈관(2)이 높지만 깔끔히 분리되진 않음 — 운동/저산소도 일부 상승.
 ECG_PRIORS: Dict[int, Dict[str, Spec]] = {
-    0: {"emergency_score": (0.10, 0.08, 0.0, 0.45),"reliability": (0.12, 0.07, 0.0, 0.5),
+    0: {"emergency_score": (0.10, 0.08, 0.0, 0.45),
         "hr_bpm": (72.0, 8.0, 50.0, 95.0), "rhythm_regularity": (0.93, 0.05, 0.78, 1.0)},
-    1: {"emergency_score": (0.25, 0.15, 0.0, 0.65),"reliability": (0.25, 0.10, 0.05, 0.6),
+    1: {"emergency_score": (0.25, 0.15, 0.0, 0.65),
         "hr_bpm": (135.0, 18.0, 100.0, 175.0),"rhythm_regularity": (0.87, 0.07, 0.65, 0.98)},
-    2: {"emergency_score": (0.60, 0.22, 0.10, 0.99),"reliability": (0.18, 0.10, 0.0, 0.55),
+    2: {"emergency_score": (0.60, 0.22, 0.10, 0.99),
         "hr_bpm": (118.0, 32.0, 40.0, 185.0),"rhythm_regularity": (0.55, 0.20, 0.15, 0.92)},
-    3: {"emergency_score": (0.28, 0.16, 0.0, 0.70),"reliability": (0.30, 0.15, 0.05, 0.8),
+    3: {"emergency_score": (0.28, 0.16, 0.0, 0.70),
         "hr_bpm": (105.0, 18.0, 75.0, 150.0),"rhythm_regularity": (0.85, 0.09, 0.55, 0.98)},
-    4: {"emergency_score": (0.42, 0.20, 0.05, 0.85),"reliability": (0.22, 0.12, 0.0, 0.65),
+    4: {"emergency_score": (0.42, 0.20, 0.05, 0.85),
         "hr_bpm": (115.0, 18.0, 85.0, 160.0),"rhythm_regularity": (0.80, 0.11, 0.5, 0.97)},
 }
 
@@ -172,7 +170,7 @@ def sample_feature_vector(rng: np.random.Generator, priors: Dict[str, Spec],
 # ---------------------------------------------------------------------------
 
 _MVN_CACHE: Dict[int, tuple] = {}   # cls → (mu, L_chol, lo, hi)
-_CALIB_PATH = r"data/interim/imu_calibration.npz"
+_CALIB_PATH = str(Path(os.environ.get("P2_DATA_DIR", "data")) / "interim" / "imu_calibration.npz")
 _MVN_CLASSES = (0, 1, 3)   # 실데이터 공분산 보존 대상
 
 
@@ -283,11 +281,3 @@ def sample_cardiac_probs(rng, cls: int) -> np.ndarray:
     alpha = np.ones(NUM_CARDIAC) * 0.8
     alpha[CARDIAC_PEAK[cls]] += CARDIAC_ALPHA_BUMP
     return rng.dirichlet(alpha).astype(np.float32)
-
-
-def gate_tier_from_reliability(reliability: float) -> int:
-    if reliability < T_MASK:
-        return 0  # use
-    if reliability < T_ALERT:
-        return 1  # mask
-    return 2      # alert

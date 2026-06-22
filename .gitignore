@@ -40,3 +40,6 @@ build/
 
 # Results (png/npz는 선택적 추적)
 results/*.npz
+
+# 스크래치 실험 출력(언더스코어 접두)
+results/_*

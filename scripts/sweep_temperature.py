@@ -1,6 +1,6 @@
 """conf_routed 게이트 온도(τ) ablation — 정본 설정 고정, τ만 스윕.
 
-정본(채택 체크포인트): conf_routed · emb_bottleneck=32 · reliability=feature ·
+정본(채택 체크포인트): conf_routed · emb_bottleneck=32 ·
 fusion_level=feature · vf 데이터셋 · 80ep · bs256 · lr3e-4 · dropout0.3 · aux0.3.
 τ만 변경하고 시드별 재학습해, 성능·라우팅이 τ에 얼마나 민감한지 측정한다.
 (목적은 점수 최적화가 아니라 민감도 ablation — robust 영역이면 고정 기본값의 타당성 실증.)
@@ -82,7 +82,7 @@ def train_one(tau, seed, epochs, lr=3e-4, bs=256, version="vf"):
 
     model = GatedFusionModel(
         fusion_hidden=(256, 128), dropout=0.3, aux_loss_weight=0.3,
-        reliability_mode="feature", gate_input_norm=True, fusion_level="feature",
+        gate_input_norm=True, fusion_level="feature",
         gate_mode="conf_routed", temperature=tau, emb_bottleneck=32).to(DEVICE)
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
