@@ -19,6 +19,14 @@ class P2Dataset(Dataset):
     ECG_AUX_DIM = 8  # cardiac_probs(5) + emergency_score·hr_bpm·rhythm_regularity
 
     def __init__(self, path: Path, modality_dropout_p: float = 0.0, seed: int = 0):
+        path = Path(path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"P2 데이터셋 파일이 없습니다: {path}\n"
+                "  build_synthetic_dataset.py가 생성한 version 과 "
+                "make_loaders/train_fusion 의 --dataset-version 이 일치하는지 확인하세요.\n"
+                "  (빌더 기본 'vf' vs 학습 기본 'v1' → 파일명 p2_synth_<version>_<split>.npz)"
+            )
         d = np.load(path)
         self.ecg_emb = torch.from_numpy(d["ecg_embedding"])  # [N, 768]
         self.ecg_aux = torch.from_numpy(d["ecg_aux"])  # [N, 8]

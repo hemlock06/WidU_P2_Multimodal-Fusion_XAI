@@ -26,6 +26,20 @@ _CLASS_PRIMARY_MOD = [None, "IMU", "ECG", "IMU", "SpO2"]
 # ecg_aux: 0-4 cardiac_probs, 5 emergency_score, 6 hr_bpm, 7 rhythm_regularity
 
 
+def _parse_ecg_aux(aux: np.ndarray) -> tuple[int, float, float]:
+    """단일 ecg_aux 벡터[8] → (cardiac_idx, emergency_score, rhythm_regularity).
+
+    SSOT는 schema.flat_ecg_aux: idx 0-4 cardiac_probs, 5 emergency_score,
+    6 hr_bpm, 7 rhythm_regularity. 신호 신뢰도 지표는 rhythm_regularity(idx 7)이며
+    hr_bpm(idx 6)이 아니다 — 두 인덱스 혼동 시 신뢰도가 raw bpm으로 잘못 읽힌다.
+    """
+    aux = np.asarray(aux)
+    cardiac_idx = int(np.argmax(aux[0:5]))
+    emergency_score = float(aux[5])
+    rhythm_regularity = float(aux[7])
+    return cardiac_idx, emergency_score, rhythm_regularity
+
+
 def _to_batch(arrays: dict[str, np.ndarray], device) -> dict[str, torch.Tensor]:
     return {
         k: torch.as_tensor(v, dtype=torch.float32, device=device)
@@ -299,8 +313,7 @@ def generate_combined_explanation(
 
     # 3. P1 ECG 임상 판독 (해석층 — 임베딩 대신 확률)
     aux = np.asarray(sample["ecg_aux"])
-    ci = int(np.argmax(aux[0:5]))
-    es, rel = float(aux[5]), float(aux[6])
+    ci, es, rel = _parse_ecg_aux(aux)
 
     dom = int(np.argmax(gate_w))
     lines = [f"[판정] {_CLASS_KO[pred]}"]
@@ -387,7 +400,7 @@ def generate_caregiver_message(
     gw, cf, ul, pr = collect_gate(model, one, device)
     pred = int(pr[0])
     aux = np.asarray(sample["ecg_aux"])
-    ci, rel = int(np.argmax(aux[0:5])), float(aux[6])
+    ci, _es, rel = _parse_ecg_aux(aux)
 
     head = {
         0: "이상 징후 없음",

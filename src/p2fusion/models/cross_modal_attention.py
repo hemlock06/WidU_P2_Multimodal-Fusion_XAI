@@ -172,7 +172,7 @@ class CrossModalAttentionFusion(nn.Module):
         # ── Step 1: 토큰 구성 ───────────────────────────────────────────────
         # ECG: 임베딩 병목 + P1 점수 전부 concat → ECG 토큰
         ecg_bn = self.ecg_bn(ecg_emb)  # [B, 16]
-        ecg_tok = torch.cat([ecg_bn, ecg_aux], dim=-1)  # [B, 26]
+        ecg_tok = torch.cat([ecg_bn, ecg_aux], dim=-1)  # [B, 24] (16 + 8)
         ecg_tok = self.ecg_proj(ecg_tok)  # [B, d_model]
 
         imu_tok = self.imu_proj(imu)  # [B, d_model]
@@ -195,22 +195,6 @@ class CrossModalAttentionFusion(nn.Module):
         all_masked = pad_mask.all(dim=-1, keepdim=True)  # [B, 1]
         if all_masked.any():
             pad_mask = pad_mask & ~all_masked.expand_as(pad_mask)
-
-        # 어텐션 가중치 캡처를 위해 마지막 레이어에 훅 등록
-        attn_weights_list: list = []
-        hooks: list = []
-
-        for layer in self.transformer.layers:
-
-            def make_hook(lst):
-                def hook(module, inp, out):
-                    # TransformerEncoderLayer 내 self_attn 출력에서 weights 캡처
-                    # need_weights=True로 재계산
-                    pass
-
-                return hook
-
-            # 훅 대신 need_weights 방식으로 대체 (아래 수동 계산)
 
         # Transformer 통과
         ctx = self.transformer(
