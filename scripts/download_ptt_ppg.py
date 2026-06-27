@@ -5,6 +5,7 @@
 
 출력: data/raw/ptt_ppg/
 """
+
 import os
 import sys
 import time
@@ -12,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://physionet.org/files/pulse-transit-time-ppg/1.1.0/"
-OUT_DIR  = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
+OUT_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -34,7 +35,7 @@ def fetch(url: str, out: Path, retries: int = 3) -> bool:
             return True
         except Exception as e:
             if attempt < retries - 1:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
             else:
                 print(f"  FAIL {url}: {e}")
                 return False
@@ -46,13 +47,17 @@ def main():
 
     # RECORDS
     req = urllib.request.Request(BASE_URL + "RECORDS", headers=HEADERS)
-    records = urllib.request.urlopen(req, timeout=10).read().decode().strip().split("\n")
-    print(f"PTT-PPG: {len(records)} records ({len(records)//3} subjects x 3 activities)")
+    records = (
+        urllib.request.urlopen(req, timeout=10).read().decode().strip().split("\n")
+    )
+    print(
+        f"PTT-PPG: {len(records)} records ({len(records) // 3} subjects x 3 activities)"
+    )
 
     ok = fail = 0
     for i, rec in enumerate(records, 1):
         for ext in [".hea", ".dat"]:
-            url  = BASE_URL + rec + ext
+            url = BASE_URL + rec + ext
             dest = OUT_DIR / (rec + ext)
             if fetch(url, dest):
                 ok += 1

@@ -7,6 +7,7 @@
 ★ 응급 판정 룰과 무관 — 이 활동분류 측정 전용 정의(응급 룰=판정기, 활동분류 룰 부재).
    목적: "활동분류에 학습형 융합이 trivial 룰보다 우위인가"의 학습-0 대조군.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,11 +25,13 @@ except Exception:
 
 CACHE = Path(os.environ.get("P2_DATA_DIR", "data")) / "p1_cache/ptt_ppg_p1.npz"
 SPLIT = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim/ptt_subject_split.json"
-OUT   = Path(__file__).resolve().parents[1] / "results" / "ptt_activity_rule_baseline.json"
+OUT = (
+    Path(__file__).resolve().parents[1] / "results" / "ptt_activity_rule_baseline.json"
+)
 
 ACT2LAB = {"sit": 0, "walk": 1, "run": 2}
 LAB = ["sit", "walk", "run"]
-FEAT_NAME, FEAT_IDX = "smv_std", 1   # IMU_FEATURES 인덱스 1
+FEAT_NAME, FEAT_IDX = "smv_std", 1  # IMU_FEATURES 인덱스 1
 
 
 def macro_f1(pred, true, n=3):
@@ -63,7 +66,9 @@ def main():
     sp = json.loads(SPLIT.read_text(encoding="utf-8"))
     tr = np.isin(subj, sp["train"])
     te = np.isin(subj, sp["test"])
-    print(f"feature={FEAT_NAME} | train {tr.sum()}w/{len(sp['train'])}명, test {te.sum()}w/{len(sp['test'])}명")
+    print(
+        f"feature={FEAT_NAME} | train {tr.sum()}w/{len(sp['train'])}명, test {te.sum()}w/{len(sp['test'])}명"
+    )
 
     # ── train에서 2-임계 grid search (macro-F1 최대화) ──
     xt, yt = x[tr], true[tr]
@@ -93,25 +98,34 @@ def main():
     # ── 학습형 융합(IMU-only)과 직접 비교 ──
     learned_imu_only = {"concat": 0.925, "gated": 0.896, "cross_attn": 0.916}
     print("\n=== 활동분류: 학습 융합(IMU-only) vs 임계룰(학습 0) ===")
-    print(f"  학습 IMU-only : concat {learned_imu_only['concat']:.3f} / "
-          f"gated {learned_imu_only['gated']:.3f} / cross_attn {learned_imu_only['cross_attn']:.3f}")
+    print(
+        f"  학습 IMU-only : concat {learned_imu_only['concat']:.3f} / "
+        f"gated {learned_imu_only['gated']:.3f} / cross_attn {learned_imu_only['cross_attn']:.3f}"
+    )
     print(f"  임계룰(smv_std): {te_f1:.3f}  ← 학습 0, 스칼라 2개")
     gap = max(learned_imu_only.values()) - te_f1
     print(f"  최대 갭(학습 best − 룰) = {gap:+.3f}")
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps({
-        "task": "ptt_ppg sit/walk/run 3-class — IMU threshold rule baseline (learning-0)",
-        "feature": FEAT_NAME,
-        "thresholds": {"theta1": t1, "theta2": t2},
-        "train_macro_f1": best_f1,
-        "test_macro_f1": te_f1,
-        "confusion_matrix": cm.tolist(),
-        "labels": LAB,
-        "split_seed": sp["seed"],
-        "compare_learned_imu_only": learned_imu_only,
-        "note": "응급 판정 룰과 무관·활동분류 전용. 학습형 융합과 동일 분할 정본 사용.",
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    OUT.write_text(
+        json.dumps(
+            {
+                "task": "ptt_ppg sit/walk/run 3-class — IMU threshold rule baseline (learning-0)",
+                "feature": FEAT_NAME,
+                "thresholds": {"theta1": t1, "theta2": t2},
+                "train_macro_f1": best_f1,
+                "test_macro_f1": te_f1,
+                "confusion_matrix": cm.tolist(),
+                "labels": LAB,
+                "split_seed": sp["seed"],
+                "compare_learned_imu_only": learned_imu_only,
+                "note": "응급 판정 룰과 무관·활동분류 전용. 학습형 융합과 동일 분할 정본 사용.",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     print(f"\n저장: {OUT}")
 
 

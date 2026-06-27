@@ -11,6 +11,7 @@ IMU/SpO2: 1단계는 문헌 캘리브레이션 사전분포, 2단계에서 실�
   - 클래스 0(정상), 1(운동), 3(낙상), 4(저산소): CPSC NSR(label=0) → ECG 정상
   - 클래스 2(심혈관): CPSC AF+Ischemia+Conduction(label=1,2,3) → ECG 비정상
 """
+
 from __future__ import annotations
 
 import os
@@ -33,11 +34,11 @@ P1_CACHE_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "p1_cache"
 # 클래스별 ECG P1 캐시 소스 매핑
 #   키: P2 클래스, 값: cpsc_mc label_mc 값 목록
 _ECG_SRC_LABELS: dict[int, list[int]] = {
-    0: [0],        # 정상(안정) → NSR
-    1: [0],        # 정상(운동) → NSR (IMU로 구분, ECG는 동성빈맥)
+    0: [0],  # 정상(안정) → NSR
+    1: [0],  # 정상(운동) → NSR (IMU로 구분, ECG는 동성빈맥)
     2: [1, 2, 3],  # 심혈관 응급 → AF + Ischemia + Conduction
-    3: [0],        # 낙상 → NSR (충격은 IMU로 구분)
-    4: [0],        # 저산소 → NSR (보상성 빈맥은 사전분포 hr_bpm으로 반영)
+    3: [0],  # 낙상 → NSR (충격은 IMU로 구분)
+    4: [0],  # 저산소 → NSR (보상성 빈맥은 사전분포 hr_bpm으로 반영)
 }
 
 # 혼동쌍: 일부 hard case에서 상대 클래스 분포 사용
@@ -57,14 +58,19 @@ class P1Cache:
       → P2 train/test가 서로 다른 CPSC 레코드 풀에서 나와 임베딩 누출 0%.
     """
 
-    def __init__(self, cache_dir: Path = P1_CACHE_DIR,
-                 splits: list[str] = None):
+    def __init__(self, cache_dir: Path = P1_CACHE_DIR, splits: list[str] = None):
         if splits is None:
             splits = ["train", "val"]  # 기본: P2 train/val 생성용
 
         pools: dict[str, list] = {
-            k: [] for k in ["embedding", "cardiac_probs", "emergency_score",
-                            "hr_bpm", "rhythm_regularity"]
+            k: []
+            for k in [
+                "embedding",
+                "cardiac_probs",
+                "emergency_score",
+                "hr_bpm",
+                "rhythm_regularity",
+            ]
         }
         self._label_pool: list[np.ndarray] = []
 
@@ -72,8 +78,7 @@ class P1Cache:
             p = cache_dir / f"cpsc_mc_{split}.npz"
             if not p.exists():
                 raise FileNotFoundError(
-                    f"P1 캐시 없음: {p}\n"
-                    "scripts/build_p1_cache.py 를 먼저 실행하세요."
+                    f"P1 캐시 없음: {p}\nscripts/build_p1_cache.py 를 먼저 실행하세요."
                 )
             d = np.load(p)
             for k in pools:
@@ -112,10 +117,15 @@ class ConditionalAssembler:
                  bootstrap = 실벡터 리샘플 + 지터 (v3)
     """
 
-    def __init__(self, seed: int = 42, emb_dim: int = EMB_DIM,
-                 noise_scale: float = 0.35, hard_frac: float = 0.12,
-                 p1_cache: Optional[P1Cache] = None,
-                 imu_mode: str = "mvn"):
+    def __init__(
+        self,
+        seed: int = 42,
+        emb_dim: int = EMB_DIM,
+        noise_scale: float = 0.35,
+        hard_frac: float = 0.12,
+        p1_cache: Optional[P1Cache] = None,
+        imu_mode: str = "mvn",
+    ):
         self.rng = np.random.default_rng(seed)
         self.emb_dim = emb_dim
         self.noise_scale = noise_scale
@@ -135,22 +145,27 @@ class ConditionalAssembler:
             return self.p1_cache.sample(self.rng, cls)
         # fallback
         ecg_prior = cp.ECG_PRIORS[cls]
-        emb = (self._emb_means[cls]
-               + self.rng.normal(0.0, 1.0, size=self.emb_dim)).astype(np.float32)
+        emb = (
+            self._emb_means[cls] + self.rng.normal(0.0, 1.0, size=self.emb_dim)
+        ).astype(np.float32)
         return {
             "embedding": emb,
             "cardiac_probs": cp.sample_cardiac_probs(self.rng, cls),
-            "emergency_score": np.float32(cp.trunc_normal(self.rng, ecg_prior["emergency_score"])),
+            "emergency_score": np.float32(
+                cp.trunc_normal(self.rng, ecg_prior["emergency_score"])
+            ),
             "hr_bpm": np.float32(cp.trunc_normal(self.rng, ecg_prior["hr_bpm"])),
-            "rhythm_regularity": np.float32(cp.trunc_normal(self.rng, ecg_prior["rhythm_regularity"])),
+            "rhythm_regularity": np.float32(
+                cp.trunc_normal(self.rng, ecg_prior["rhythm_regularity"])
+            ),
         }
 
     def _noisy(self, vec: np.ndarray, priors, order) -> np.ndarray:
         if self.noise_scale <= 0:
             return vec
-        return (vec + self.rng.normal(
-            0.0, self.noise_scale * _std_vec(priors, order)
-        )).astype(np.float32)
+        return (
+            vec + self.rng.normal(0.0, self.noise_scale * _std_vec(priors, order))
+        ).astype(np.float32)
 
     def assemble_one(self, cls: int) -> MultimodalSample:
         # ECG: 항상 진짜 클래스 (hard case 영향 없음)
@@ -163,9 +178,11 @@ class ConditionalAssembler:
         if self.rng.random() < self.hard_frac:
             partner = int(self.rng.choice(PARTNERS[cls]))
             if self.rng.random() < 0.5:
-                imu_cls = partner; imu_tag = "synth_hard"
+                imu_cls = partner
+                imu_tag = "synth_hard"
             if self.rng.random() < 0.5:
-                spo2_cls = partner; spo2_tag = "synth_hard"
+                spo2_cls = partner
+                spo2_tag = "synth_hard"
 
         raw_imu = cp.sample_imu(self.rng, imu_cls, mode=self.imu_mode)
         # indep 모드에서만 측정 노이즈 추가 (mvn/bootstrap은 자체 분산 포함)
@@ -173,8 +190,9 @@ class ConditionalAssembler:
             imu = self._noisy(raw_imu, cp.IMU_PRIORS[imu_cls], IMU_FEATURES)
         else:
             imu = raw_imu.astype(np.float32)
-        spo2 = self._noisy(cp.sample_spo2(self.rng, spo2_cls),
-                           cp.SPO2_PRIORS[spo2_cls], SPO2_FEATURES)
+        spo2 = self._noisy(
+            cp.sample_spo2(self.rng, spo2_cls), cp.SPO2_PRIORS[spo2_cls], SPO2_FEATURES
+        )
 
         return MultimodalSample(
             ecg_embedding=ecg["embedding"].astype(np.float32),
@@ -196,8 +214,9 @@ class ConditionalAssembler:
         self.rng.shuffle(out)
         return out
 
-    def assemble(self, counts: Optional[list[int]] = None,
-                 n_per_class: int = 2000) -> list[MultimodalSample]:
+    def assemble(
+        self, counts: Optional[list[int]] = None, n_per_class: int = 2000
+    ) -> list[MultimodalSample]:
         if counts is None:
             return self.assemble_balanced(n_per_class)
         out: list[MultimodalSample] = []
@@ -208,12 +227,12 @@ class ConditionalAssembler:
 
 
 def samples_to_arrays(samples: list[MultimodalSample]) -> dict:
-    emb     = np.stack([s.ecg_embedding for s in samples])
+    emb = np.stack([s.ecg_embedding for s in samples])
     ecg_aux = np.stack([s.flat_ecg_aux() for s in samples])
-    imu     = np.stack([s.imu_feat for s in samples])
-    spo2    = np.stack([s.spo2_feat for s in samples])
-    mask    = np.stack([s.modality_mask for s in samples])
-    y       = np.array([s.label for s in samples], dtype=np.int64)
+    imu = np.stack([s.imu_feat for s in samples])
+    spo2 = np.stack([s.spo2_feat for s in samples])
+    mask = np.stack([s.modality_mask for s in samples])
+    y = np.array([s.label for s in samples], dtype=np.int64)
     return {
         "ecg_embedding": emb.astype(np.float32),
         "ecg_aux": ecg_aux.astype(np.float32),

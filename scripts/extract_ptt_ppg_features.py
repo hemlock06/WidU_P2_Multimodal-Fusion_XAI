@@ -20,6 +20,7 @@ PTT-PPG (PhysioNet pulse-transit-time-ppg v1.1.0):
   data/interim/ptt_ppg_features.npz
   키: imu_feat[N,12], spo2_feat[N,8], label[N], subject[N], activity[N]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,8 +40,8 @@ except Exception:
     pass
 
 DATA_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
-OUT_DIR  = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim"
-FS       = 500.0   # Hz
+OUT_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim"
+FS = 500.0  # Hz
 
 # 활동 → P2 클래스
 ACTIVITY_LABEL = {"sit": 0, "walk": 1, "run": 1}
@@ -79,8 +80,9 @@ def load_wfdb(record_path: str) -> tuple[np.ndarray, dict] | tuple[None, None]:
     """wfdb 라이브러리 또는 수동 파싱으로 레코드 로드."""
     try:
         import wfdb
+
         rec = wfdb.rdrecord(record_path)
-        data = rec.p_signal.astype(np.float32)   # [T, n_ch]
+        data = rec.p_signal.astype(np.float32)  # [T, n_ch]
         info = {"channels": rec.sig_name, "fs": float(rec.fs)}
         return data, info
     except ImportError:
@@ -104,23 +106,25 @@ def find_channels(channels: list, keywords: list) -> list[int]:
         # 1단계: 정확 일치
         for i, ch in enumerate(channels):
             if ch.lower() == kw_l and i not in idxs:
-                idxs.append(i); break
+                idxs.append(i)
+                break
         else:
             # 2단계: substring 포함
             for i, ch in enumerate(channels):
                 if kw_l in ch.lower() and i not in idxs:
-                    idxs.append(i); break
+                    idxs.append(i)
+                    break
     return idxs
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=str(DATA_DIR))
-    ap.add_argument("--out-dir",  default=str(OUT_DIR))
+    ap.add_argument("--out-dir", default=str(OUT_DIR))
     args = ap.parse_args()
 
     data_dir = Path(args.data_dir)
-    out_dir  = Path(args.out_dir)
+    out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     hea_files = sorted(data_dir.glob("*.hea"))
@@ -135,11 +139,11 @@ def main():
 
     for hea in hea_files:
         # 파일명: s{subject}_{activity}.hea
-        stem   = hea.stem          # e.g. s1_walk
-        parts  = stem.split("_", 1)
-        subj   = parts[0]          # s1
-        act    = parts[1] if len(parts) > 1 else "sit"  # walk/run/sit
-        label  = ACTIVITY_LABEL.get(act.lower(), 0)
+        stem = hea.stem  # e.g. s1_walk
+        parts = stem.split("_", 1)
+        subj = parts[0]  # s1
+        act = parts[1] if len(parts) > 1 else "sit"  # walk/run/sit
+        label = ACTIVITY_LABEL.get(act.lower(), 0)
 
         record_path = str(hea.with_suffix(""))
         data, info = load_wfdb(record_path)
@@ -150,26 +154,48 @@ def main():
         fs = float(info.get("fs", FS))
 
         # 가속도 채널 탐색 — PTT-PPG 실제 채널명: a_x/a_y/a_z, g_x/g_y/g_z
-        acc_idx = find_channels(channels, ["a_x","a_y","a_z",
-                                           "acc_x","acc_y","acc_z",
-                                           "accel_x","accel_y","accel_z"])
-        gyr_idx = find_channels(channels, ["g_x","g_y","g_z",
-                                           "gyro_x","gyro_y","gyro_z",
-                                           "gyr_x","gyr_y","gyr_z"])
-        spo2_idx= find_channels(channels, ["spo2","SpO2","spO2","oxygen"])
+        acc_idx = find_channels(
+            channels,
+            [
+                "a_x",
+                "a_y",
+                "a_z",
+                "acc_x",
+                "acc_y",
+                "acc_z",
+                "accel_x",
+                "accel_y",
+                "accel_z",
+            ],
+        )
+        gyr_idx = find_channels(
+            channels,
+            [
+                "g_x",
+                "g_y",
+                "g_z",
+                "gyro_x",
+                "gyro_y",
+                "gyro_z",
+                "gyr_x",
+                "gyr_y",
+                "gyr_z",
+            ],
+        )
+        spo2_idx = find_channels(channels, ["spo2", "SpO2", "spO2", "oxygen"])
 
         if len(acc_idx) < 3:
             print(f"  skip {stem}: 가속도 채널 부족 {acc_idx} / {channels}")
             continue
 
-        accel = data[:, acc_idx[:3]]   # [T, 3]
-        gyro  = data[:, gyr_idx[:3]] if len(gyr_idx) >= 3 else np.zeros_like(accel)
+        accel = data[:, acc_idx[:3]]  # [T, 3]
+        gyro = data[:, gyr_idx[:3]] if len(gyr_idx) >= 3 else np.zeros_like(accel)
 
         # PTT-PPG 단위:
         #   가속도: 헤더는 'g'라 표기하나 실제값 ~9.8 → m/s² (accel_unit="ms2")
         #   자이로: deg/s → rad/s 변환
         DEG2RAD = np.pi / 180.0
-        gyro = gyro * DEG2RAD   # deg/s → rad/s
+        gyro = gyro * DEG2RAD  # deg/s → rad/s
 
         imu6 = np.concatenate([accel, gyro], axis=1)
         imu_feat = window_to_imu_feat(imu6, fs=fs, accel_unit="ms2")
@@ -187,35 +213,45 @@ def main():
             spo2_feat = np.full(8, np.nan, dtype=np.float32)  # 없으면 NaN
         spo2_feats.append(spo2_feat)
 
-        labels.append(label); subjects.append(subj); activities.append(act)
+        labels.append(label)
+        subjects.append(subj)
+        activities.append(act)
 
     if not imu_feats:
         print("[ERROR] 추출된 레코드가 없습니다.")
         sys.exit(1)
 
-    imu_arr  = np.stack(imu_feats).astype(np.float32)
+    imu_arr = np.stack(imu_feats).astype(np.float32)
     spo2_arr = np.stack(spo2_feats).astype(np.float32)
-    label_arr= np.array(labels, dtype=np.int64)
+    label_arr = np.array(labels, dtype=np.int64)
 
     out_path = out_dir / "ptt_ppg_features.npz"
-    np.savez_compressed(out_path,
-        imu_feat=imu_arr, spo2_feat=spo2_arr, label=label_arr,
-        subject=np.array(subjects), activity=np.array(activities))
+    np.savez_compressed(
+        out_path,
+        imu_feat=imu_arr,
+        spo2_feat=spo2_arr,
+        label=label_arr,
+        subject=np.array(subjects),
+        activity=np.array(activities),
+    )
 
     print(f"\n추출 완료: {len(imu_arr)}개")
-    print(f"  sit(0)={int((label_arr==0).sum())}, walk/run(1)={int((label_arr==1).sum())}")
+    print(
+        f"  sit(0)={int((label_arr == 0).sum())}, walk/run(1)={int((label_arr == 1).sum())}"
+    )
     print(f"저장: {out_path}")
 
     # 피처 통계 (class_priors 보정용)
     from p2fusion.schema import IMU_FEATURES
+
     print("\n=== IMU 피처 통계 (sit) ===")
     for i, name in enumerate(IMU_FEATURES):
-        v = imu_arr[label_arr==0, i]
+        v = imu_arr[label_arr == 0, i]
         if len(v):
             print(f"  {name:15s}: {v.mean():.3f} ± {v.std():.3f}")
     print("\n=== IMU 피처 통계 (walk+run) ===")
     for i, name in enumerate(IMU_FEATURES):
-        v = imu_arr[label_arr==1, i]
+        v = imu_arr[label_arr == 1, i]
         if len(v):
             print(f"  {name:15s}: {v.mean():.3f} ± {v.std():.3f}")
 

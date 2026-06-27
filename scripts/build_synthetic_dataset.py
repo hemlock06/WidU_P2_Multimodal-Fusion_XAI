@@ -10,6 +10,7 @@ ECG 누출 방지 설계 (2026-05-30 수정):
 
 출력: synthetic/p2_synth_{version}_{split}.npz (train/val/test)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,9 +51,12 @@ def main():
     ap.add_argument("--n-per-class", type=int, default=4000)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--version", default="vf")
-    ap.add_argument("--imu-mode", default="mvn",
-                    choices=["indep", "mvn", "bootstrap"],
-                    help="IMU 샘플링 모드: indep/mvn(기본)/bootstrap")
+    ap.add_argument(
+        "--imu-mode",
+        default="mvn",
+        choices=["indep", "mvn", "bootstrap"],
+        help="IMU 샘플링 모드: indep/mvn(기본)/bootstrap",
+    )
     ap.add_argument("--out-dir", default=str(DATA_DIR / "synthetic"))
     args = ap.parse_args()
 
@@ -73,7 +77,9 @@ def main():
     # 단순하게: train n_per_class*0.7/(0.7+0.15), val 나머지
     # 가장 깔끔: train/val을 합산 후 분리
     tv_n = args.n_per_class  # train+val 합산 per class (test와 동일 크기 유지 목적)
-    asm_tv = ConditionalAssembler(seed=args.seed, p1_cache=cache_tv, imu_mode=args.imu_mode)
+    asm_tv = ConditionalAssembler(
+        seed=args.seed, p1_cache=cache_tv, imu_mode=args.imu_mode
+    )
     tv_arrays = build_split(asm_tv, tv_n)
     n_tv = len(tv_arrays["label"])
 
@@ -86,7 +92,9 @@ def main():
     cache_te = make_cache(["test"])
     if cache_te:
         print("P1 cache (test pool): ECG = real P1 output (완전 분리)")
-    asm_te = ConditionalAssembler(seed=args.seed + 99, p1_cache=cache_te, imu_mode=args.imu_mode)
+    asm_te = ConditionalAssembler(
+        seed=args.seed + 99, p1_cache=cache_te, imu_mode=args.imu_mode
+    )
     # test 크기: n_per_class * 0.15 / 0.85 ≈ 706/class → 실제론 n_per_class * 0.176
     te_n_per_class = max(int(args.n_per_class * 0.15 / 0.85), 100)
     te_arrays = build_split(asm_te, te_n_per_class)
@@ -94,23 +102,26 @@ def main():
     # ── 저장 ────────────────────────────────────────────────────────────────
     splits = {
         "train": {k: v[idx_tr] for k, v in tv_arrays.items()},
-        "val":   {k: v[idx_va] for k, v in tv_arrays.items()},
-        "test":  te_arrays,
+        "val": {k: v[idx_va] for k, v in tv_arrays.items()},
+        "test": te_arrays,
     }
 
     for name, arrays in splits.items():
         path = out_dir / f"p2_synth_{args.version}_{name}.npz"
         np.savez_compressed(path, **arrays)
         y = arrays["label"]
-        dist = ", ".join(f"{CLASS_NAMES[c]}:{int((y == c).sum())}"
-                         for c in range(NUM_CLASSES))
+        dist = ", ".join(
+            f"{CLASS_NAMES[c]}:{int((y == c).sum())}" for c in range(NUM_CLASSES)
+        )
         print(f"[{name:5s}] n={len(y):6d}  -> {path.name}")
         print(f"         {dist}")
 
-    print(f"\nemb={splits['train']['ecg_embedding'].shape[1]}, "
-          f"ecg_aux={splits['train']['ecg_aux'].shape[1]}, "
-          f"imu={splits['train']['imu_feat'].shape[1]}, "
-          f"spo2={splits['train']['spo2_feat'].shape[1]}")
+    print(
+        f"\nemb={splits['train']['ecg_embedding'].shape[1]}, "
+        f"ecg_aux={splits['train']['ecg_aux'].shape[1]}, "
+        f"imu={splits['train']['imu_feat'].shape[1]}, "
+        f"spo2={splits['train']['spo2_feat'].shape[1]}"
+    )
 
 
 if __name__ == "__main__":

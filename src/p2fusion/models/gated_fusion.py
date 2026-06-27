@@ -13,6 +13,7 @@
 보조손실: 각 unimodal head CrossEntropy (α=0.3)
 P3 활용: gate_weights(동적), unimodal_logits, conf_per_modality
 """
+
 from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
@@ -24,13 +25,14 @@ from torch import Tensor
 
 from p2fusion.schema import EMB_DIM, IMU_DIM, NUM_CLASSES, SPO2_DIM
 
-ECG_AUX_DIM = 8       # schema.flat_ecg_aux: cardiac_probs[5] + emergency_score·hr_bpm·rhythm_regularity
-EXPERT_DIM   = 128   # 모달리티별 공통 expert 출력 차원
-GATE_IN_DIM  = ECG_AUX_DIM + 3 + 3  # ecg_aux + modality_mask + conf(3)
+ECG_AUX_DIM = 8  # schema.flat_ecg_aux: cardiac_probs[5] + emergency_score·hr_bpm·rhythm_regularity
+EXPERT_DIM = 128  # 모달리티별 공통 expert 출력 차원
+GATE_IN_DIM = ECG_AUX_DIM + 3 + 3  # ecg_aux + modality_mask + conf(3)
 
 
-def _mlp(in_dim: int, hidden: tuple[int, ...], out_dim: int,
-         dropout: float = 0.2) -> nn.Sequential:
+def _mlp(
+    in_dim: int, hidden: tuple[int, ...], out_dim: int, dropout: float = 0.2
+) -> nn.Sequential:
     layers = []
     d = in_dim
     for h in hidden:
@@ -40,8 +42,9 @@ def _mlp(in_dim: int, hidden: tuple[int, ...], out_dim: int,
     return nn.Sequential(*layers)
 
 
-def _bottleneck_encoder(in_dim: int, bottleneck: int, out_dim: int,
-                        dropout: float = 0.5) -> nn.Sequential:
+def _bottleneck_encoder(
+    in_dim: int, bottleneck: int, out_dim: int, dropout: float = 0.5
+) -> nn.Sequential:
     """단일 구조 인코더 — in → bottleneck → out (Linear·Dropout·Linear·LayerNorm).
     세 모달리티(ECG·IMU·SpO2)가 동일 아키텍처를 쓰도록(ECG 병목 방식으로 통일)."""
     return nn.Sequential(
@@ -99,8 +102,8 @@ class GatedFusionModel(nn.Module):
             # 단일 구조: 세 모달 동일 병목 인코더 (in→bn→128). ECG는 기존과 동일,
             # IMU·SpO2도 같은 아키텍처로 통일 — 동일 연산 반복으로 연산 규칙성 확보.
             bn = emb_bottleneck if emb_bottleneck > 0 else 32
-            self.ecg_proj    = _bottleneck_encoder(EMB_DIM, bn, EXPERT_DIM)
-            self.imu_expert  = _bottleneck_encoder(IMU_DIM, bn, EXPERT_DIM)
+            self.ecg_proj = _bottleneck_encoder(EMB_DIM, bn, EXPERT_DIM)
+            self.imu_expert = _bottleneck_encoder(IMU_DIM, bn, EXPERT_DIM)
             self.spo2_expert = _bottleneck_encoder(SPO2_DIM, bn, EXPERT_DIM)
         else:
             # ── ECG expert (기존) ──
@@ -108,7 +111,7 @@ class GatedFusionModel(nn.Module):
             if emb_bottleneck > 0:
                 self.ecg_proj = nn.Sequential(
                     nn.Linear(EMB_DIM, emb_bottleneck),
-                    nn.Dropout(0.5),                    # 병목에 강한 dropout
+                    nn.Dropout(0.5),  # 병목에 강한 dropout
                     nn.Linear(emb_bottleneck, EXPERT_DIM),
                     nn.LayerNorm(EXPERT_DIM),
                 )
@@ -128,7 +131,9 @@ class GatedFusionModel(nn.Module):
         # ── 게이팅 네트워크 (learned 모드 전용) ──
         # conf_routed 모드: gate_w = softmax(conf/τ), 학습 파라미터 없음
         if gate_mode == "learned":
-            self.gate_in_norm = nn.LayerNorm(GATE_IN_DIM) if gate_input_norm else nn.Identity()
+            self.gate_in_norm = (
+                nn.LayerNorm(GATE_IN_DIM) if gate_input_norm else nn.Identity()
+            )
             self.gate_net = nn.Sequential(
                 nn.Linear(GATE_IN_DIM, 32),
                 nn.GELU(),
@@ -139,12 +144,15 @@ class GatedFusionModel(nn.Module):
             self.gate_net = None
 
         # ── Fusion MLP (feature 모드 전용; logit 모드는 MoE라 불필요) ──
-        self.fusion_mlp = _mlp(EXPERT_DIM, fusion_hidden, num_classes, dropout) \
-                          if fusion_level == "feature" else None
+        self.fusion_mlp = (
+            _mlp(EXPERT_DIM, fusion_hidden, num_classes, dropout)
+            if fusion_level == "feature"
+            else None
+        )
 
         # ── Unimodal 보조 헤드 (P3용: 각 모달리티 단독 예측력) ──
-        self.ecg_head  = nn.Linear(EXPERT_DIM, num_classes)
-        self.imu_head  = nn.Linear(EXPERT_DIM, num_classes)
+        self.ecg_head = nn.Linear(EXPERT_DIM, num_classes)
+        self.imu_head = nn.Linear(EXPERT_DIM, num_classes)
         self.spo2_head = nn.Linear(EXPERT_DIM, num_classes)
 
     def forward(
@@ -159,45 +167,49 @@ class GatedFusionModel(nn.Module):
           "unimodal_logits"   [B, 3, 5] — 각 expert 단독 예측
           "conf_per_modality" [B, 3]    — 각 expert 확신도 (max softmax, detached)
         """
-        ecg_emb = batch["ecg_emb"]   # [B, 768]
-        ecg_aux = batch["ecg_aux"]   # [B, 8]
-        imu     = batch["imu"]       # [B, 12]
-        spo2    = batch["spo2"]      # [B, 8]
-        mask    = batch["mask"]      # [B, 3]  (ecg, imu, spo2)
+        ecg_emb = batch["ecg_emb"]  # [B, 768]
+        ecg_aux = batch["ecg_aux"]  # [B, 8]
+        imu = batch["imu"]  # [B, 12]
+        spo2 = batch["spo2"]  # [B, 8]
+        mask = batch["mask"]  # [B, 3]  (ecg, imu, spo2)
 
         # ── Step 1: Expert 표현 계산 ──
-        ecg_feat  = self.ecg_proj(ecg_emb) * mask[:, 0:1]        # [B,128]
-        imu_feat  = self.imu_expert(imu  * mask[:, 1:2])          # [B,128]
-        spo2_feat = self.spo2_expert(spo2 * mask[:, 2:3])         # [B,128]
+        ecg_feat = self.ecg_proj(ecg_emb) * mask[:, 0:1]  # [B,128]
+        imu_feat = self.imu_expert(imu * mask[:, 1:2])  # [B,128]
+        spo2_feat = self.spo2_expert(spo2 * mask[:, 2:3])  # [B,128]
 
         # ── Step 2: Unimodal 헤드 → 확신도 ──
-        ecg_uni  = self.ecg_head(ecg_feat)                         # [B,5]
-        imu_uni  = self.imu_head(imu_feat)
+        ecg_uni = self.ecg_head(ecg_feat)  # [B,5]
+        imu_uni = self.imu_head(imu_feat)
         spo2_uni = self.spo2_head(spo2_feat)
 
         # conf_m = max(softmax(uni_m)) — detach: expert로 gradient 안 흘림
-        conf = torch.stack([
-            F.softmax(ecg_uni,  dim=-1).max(dim=-1).values,
-            F.softmax(imu_uni,  dim=-1).max(dim=-1).values,
-            F.softmax(spo2_uni, dim=-1).max(dim=-1).values,
-        ], dim=1).detach()                                          # [B,3]
+        conf = torch.stack(
+            [
+                F.softmax(ecg_uni, dim=-1).max(dim=-1).values,
+                F.softmax(imu_uni, dim=-1).max(dim=-1).values,
+                F.softmax(spo2_uni, dim=-1).max(dim=-1).values,
+            ],
+            dim=1,
+        ).detach()  # [B,3]
 
         # ── Step 3: 게이팅 가중치 ──
         if self.gate_mode == "conf_routed":
             # conf/τ → softmax. 결측 모달리티는 -inf 제외.
-            gate_raw = conf / self.temperature                     # [B,3]
+            gate_raw = conf / self.temperature  # [B,3]
         else:
-            gate_in  = torch.cat([ecg_aux, mask, conf], dim=-1)      # [B,14]
-            gate_in  = self.gate_in_norm(gate_in)
-            gate_raw = self.gate_net(gate_in)                          # [B,3]
+            gate_in = torch.cat([ecg_aux, mask, conf], dim=-1)  # [B,14]
+            gate_in = self.gate_in_norm(gate_in)
+            gate_raw = self.gate_net(gate_in)  # [B,3]
 
         # 결측 모달리티 hard masking
         neg_inf = torch.full_like(gate_raw, float("-inf"))
         gate_masked = torch.where(mask > 0.5, gate_raw, neg_inf)
-        all_masked = (mask.sum(dim=-1, keepdim=True) == 0)
-        gate_masked = torch.where(all_masked.expand_as(gate_masked),
-                                  gate_raw, gate_masked)
-        gate_w = F.softmax(gate_masked, dim=-1)                    # [B,3]
+        all_masked = mask.sum(dim=-1, keepdim=True) == 0
+        gate_masked = torch.where(
+            all_masked.expand_as(gate_masked), gate_raw, gate_masked
+        )
+        gate_w = F.softmax(gate_masked, dim=-1)  # [B,3]
 
         # ── Step 4: Fusion ──
         uni_stack = torch.stack([ecg_uni, imu_uni, spo2_uni], dim=1)  # [B,3,5]
@@ -205,19 +217,21 @@ class GatedFusionModel(nn.Module):
         if self.fusion_level == "logit":
             # MoE: 게이트 가중 확률 혼합 → log-prob
             # gate_w가 적응하지 않으면 틀린 expert 확률이 섞여 loss 폭증 → 강제 적응
-            probs = F.softmax(uni_stack, dim=-1)                   # [B,3,5]
-            p_mix = (gate_w.unsqueeze(-1) * probs).sum(dim=1)      # [B,5]
-            logits = torch.log(p_mix.clamp(min=1e-8))              # [B,5] log-prob
+            probs = F.softmax(uni_stack, dim=-1)  # [B,3,5]
+            p_mix = (gate_w.unsqueeze(-1) * probs).sum(dim=1)  # [B,5]
+            logits = torch.log(p_mix.clamp(min=1e-8))  # [B,5] log-prob
         else:
-            fused  = (gate_w[:, 0:1] * ecg_feat
-                      + gate_w[:, 1:2] * imu_feat
-                      + gate_w[:, 2:3] * spo2_feat)                # [B,128]
-            logits = self.fusion_mlp(fused)                         # [B,5]
+            fused = (
+                gate_w[:, 0:1] * ecg_feat
+                + gate_w[:, 1:2] * imu_feat
+                + gate_w[:, 2:3] * spo2_feat
+            )  # [B,128]
+            logits = self.fusion_mlp(fused)  # [B,5]
 
         return {
-            "logits":            logits,
-            "gate_weights":      gate_w,
-            "unimodal_logits":   uni_stack,
+            "logits": logits,
+            "gate_weights": gate_w,
+            "unimodal_logits": uni_stack,
             "conf_per_modality": conf,
         }
 
@@ -230,7 +244,7 @@ class GatedFusionModel(nn.Module):
         if out is None:
             out = self.forward(batch)
 
-        labels = batch["label"]                                    # [B]
+        labels = batch["label"]  # [B]
         if self.fusion_level == "logit":
             # logits이 이미 log-prob → NLL
             main_loss = F.nll_loss(out["logits"], labels)
@@ -238,12 +252,12 @@ class GatedFusionModel(nn.Module):
             main_loss = F.cross_entropy(out["logits"], labels)
 
         if self.aux_loss_weight > 0 and "unimodal_logits" in out:
-            uni = out["unimodal_logits"]                           # [B,3,5]
-            mask = batch["mask"]                                   # [B,3]
+            uni = out["unimodal_logits"]  # [B,3,5]
+            mask = batch["mask"]  # [B,3]
             aux = 0.0
             n_valid = 0
             for m_idx in range(3):
-                m_mask = mask[:, m_idx]                            # [B]
+                m_mask = mask[:, m_idx]  # [B]
                 if m_mask.sum() == 0:
                     continue
                 valid_logits = uni[m_mask > 0.5, m_idx, :]

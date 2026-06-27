@@ -1,6 +1,6 @@
 """conf_routed 게이트 온도(τ) ablation — 정본 설정 고정, τ만 스윕.
 
-정본(채택 체크포인트): conf_routed · emb_bottleneck=32 ·
+GMU(conf_routed) 정본 설정: emb_bottleneck=32 ·
 fusion_level=feature · vf 데이터셋 · 80ep · bs256 · lr3e-4 · dropout0.3 · aux0.3.
 τ만 변경하고 시드별 재학습해, 성능·라우팅이 τ에 얼마나 민감한지 측정한다.
 (목적은 점수 최적화가 아니라 민감도 ablation — robust 영역이면 고정 기본값의 타당성 실증.)
@@ -9,6 +9,7 @@ fusion_level=feature · vf 데이터셋 · 80ep · bs256 · lr3e-4 · dropout0.3
     P2_DATA_DIR=<data> python scripts/sweep_temperature.py \
         --taus 0.05,0.1,0.15,0.25,0.5,1.0 --seeds 42,1,7 --epochs 80
 """
+
 from __future__ import annotations
 
 import argparse
@@ -63,7 +64,11 @@ def evaluate(model, loader):
 def routing(labels, gw):
     """클래스 → 기대모달 게이트 가중 평균 (라우팅 sharpness)."""
     res = {}
-    for cls, mod, nm in [(2, 0, "cardiac_ECG"), (3, 1, "impact_IMU"), (4, 2, "hypoxia_SpO2")]:
+    for cls, mod, nm in [
+        (2, 0, "cardiac_ECG"),
+        (3, 1, "impact_IMU"),
+        (4, 2, "hypoxia_SpO2"),
+    ]:
         m = labels == cls
         res[nm] = float(gw[m, mod].mean()) if m.sum() > 0 else float("nan")
     return res
@@ -72,7 +77,9 @@ def routing(labels, gw):
 def train_one(tau, seed, epochs, lr=3e-4, bs=256, version="vf"):
     torch.manual_seed(seed)
     np.random.seed(seed)
-    tr = P2Dataset(DATA_DIR / f"p2_synth_{version}_train.npz", modality_dropout_p=0.15, seed=seed)
+    tr = P2Dataset(
+        DATA_DIR / f"p2_synth_{version}_train.npz", modality_dropout_p=0.15, seed=seed
+    )
     va = P2Dataset(DATA_DIR / f"p2_synth_{version}_val.npz")
     te = P2Dataset(DATA_DIR / f"p2_synth_{version}_test.npz")
     pin = torch.cuda.is_available()
@@ -81,9 +88,15 @@ def train_one(tau, seed, epochs, lr=3e-4, bs=256, version="vf"):
     tel = DataLoader(te, batch_size=512, pin_memory=pin)
 
     model = GatedFusionModel(
-        fusion_hidden=(256, 128), dropout=0.3, aux_loss_weight=0.3,
-        gate_input_norm=True, fusion_level="feature",
-        gate_mode="conf_routed", temperature=tau, emb_bottleneck=32).to(DEVICE)
+        fusion_hidden=(256, 128),
+        dropout=0.3,
+        aux_loss_weight=0.3,
+        gate_input_norm=True,
+        fusion_level="feature",
+        gate_mode="conf_routed",
+        temperature=tau,
+        emb_bottleneck=32,
+    ).to(DEVICE)
 
     opt = AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     sch = CosineAnnealingLR(opt, T_max=epochs, eta_min=lr * 0.01)
@@ -119,7 +132,10 @@ def main():
     a = ap.parse_args()
     taus = [float(x) for x in a.taus.split(",")]
     seeds = [int(x) for x in a.seeds.split(",")]
-    print(f"Device {DEVICE} | taus={taus} | seeds={seeds} | epochs={a.epochs} | data {DATA_DIR}", flush=True)
+    print(
+        f"Device {DEVICE} | taus={taus} | seeds={seeds} | epochs={a.epochs} | data {DATA_DIR}",
+        flush=True,
+    )
 
     results = {}
     for tau in taus:
@@ -127,31 +143,50 @@ def main():
         for sd in seeds:
             t0 = time.time()
             v, t, r = train_one(tau, sd, a.epochs)
-            vfs.append(v); tfs.append(t); rts.append(r)
-            print(f"  tau={tau:<5} seed={sd}: val={v:.4f} test={t:.4f} "
-                  f"route[card->ECG {r['cardiac_ECG']:.2f} | fall->IMU {r['impact_IMU']:.2f} | "
-                  f"hyp->SpO2 {r['hypoxia_SpO2']:.2f}] ({time.time()-t0:.0f}s)", flush=True)
+            vfs.append(v)
+            tfs.append(t)
+            rts.append(r)
+            print(
+                f"  tau={tau:<5} seed={sd}: val={v:.4f} test={t:.4f} "
+                f"route[card->ECG {r['cardiac_ECG']:.2f} | fall->IMU {r['impact_IMU']:.2f} | "
+                f"hyp->SpO2 {r['hypoxia_SpO2']:.2f}] ({time.time() - t0:.0f}s)",
+                flush=True,
+            )
         results[str(tau)] = {
-            "val_mean": float(np.mean(vfs)), "val_std": float(np.std(vfs)),
-            "test_mean": float(np.mean(tfs)), "test_std": float(np.std(tfs)),
+            "val_mean": float(np.mean(vfs)),
+            "val_std": float(np.std(vfs)),
+            "test_mean": float(np.mean(tfs)),
+            "test_std": float(np.std(tfs)),
             "route": {k: float(np.mean([r[k] for r in rts])) for k in rts[0]},
         }
 
     print("\n" + "=" * 92, flush=True)
-    print(f"{'tau':>6} {'val F1 (mean+-std)':>22} {'test F1':>16} "
-          f"{'card->ECG':>10} {'fall->IMU':>10} {'hyp->SpO2':>10}")
+    print(
+        f"{'tau':>6} {'val F1 (mean+-std)':>22} {'test F1':>16} "
+        f"{'card->ECG':>10} {'fall->IMU':>10} {'hyp->SpO2':>10}"
+    )
     print("-" * 92)
     for tau in taus:
         r = results[str(tau)]
-        print(f"{tau:>6} {r['val_mean']:>12.4f}+-{r['val_std']:.3f}   {r['test_mean']:>8.4f}+-{r['test_std']:.3f}  "
-              f"{r['route']['cardiac_ECG']:>10.2f} {r['route']['impact_IMU']:>10.2f} {r['route']['hypoxia_SpO2']:>10.2f}")
+        print(
+            f"{tau:>6} {r['val_mean']:>12.4f}+-{r['val_std']:.3f}   {r['test_mean']:>8.4f}+-{r['test_std']:.3f}  "
+            f"{r['route']['cardiac_ECG']:>10.2f} {r['route']['impact_IMU']:>10.2f} {r['route']['hypoxia_SpO2']:>10.2f}"
+        )
     print("=" * 92)
 
     out = ROOT / "results" / "sweep_temperature.json"
     out.parent.mkdir(exist_ok=True)
-    json.dump({"config": "conf_routed bn32 vf 80ep (정본 고정, tau만 스윕)",
-               "taus": taus, "seeds": seeds, "results": results},
-              open(out, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
+    json.dump(
+        {
+            "config": "conf_routed bn32 vf 80ep (정본 고정, tau만 스윕)",
+            "taus": taus,
+            "seeds": seeds,
+            "results": results,
+        },
+        open(out, "w", encoding="utf-8"),
+        indent=2,
+        ensure_ascii=False,
+    )
     print(f"\n저장: {out}")
 
 

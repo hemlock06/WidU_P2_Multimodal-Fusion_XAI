@@ -9,6 +9,7 @@
 
 모달리티 드롭아웃: 마스크 값(0/1)을 해당 피처 벡터에 곱해서 결측 시뮬레이션.
 """
+
 from __future__ import annotations
 
 from typing import Dict
@@ -30,8 +31,12 @@ class ConcatMLP(nn.Module):
     dropout_p  : 각 히든 층 후 Dropout 비율.
     """
 
-    def __init__(self, hidden_dims=(512, 256, 128), dropout_p: float = 0.3,
-                 num_classes: int = NUM_CLASSES):
+    def __init__(
+        self,
+        hidden_dims=(512, 256, 128),
+        dropout_p: float = 0.3,
+        num_classes: int = NUM_CLASSES,
+    ):
         super().__init__()
         self.input_norm = nn.LayerNorm(INPUT_DIM)
 
@@ -50,11 +55,11 @@ class ConcatMLP(nn.Module):
 
     def forward(self, batch: dict[str, Tensor]) -> Tensor:
         # 마스크 적용 (결측 모달리티 → 0벡터)
-        ecg_emb = batch["ecg_emb"] * batch["mask"][:, 0:1]    # [B,768]
-        ecg_aux = batch["ecg_aux"] * batch["mask"][:, 0:1]    # [B,8]
-        imu     = batch["imu"]     * batch["mask"][:, 1:2]    # [B,12]
-        spo2    = batch["spo2"]    * batch["mask"][:, 2:3]    # [B,8]
+        ecg_emb = batch["ecg_emb"] * batch["mask"][:, 0:1]  # [B,768]
+        ecg_aux = batch["ecg_aux"] * batch["mask"][:, 0:1]  # [B,8]
+        imu = batch["imu"] * batch["mask"][:, 1:2]  # [B,12]
+        spo2 = batch["spo2"] * batch["mask"][:, 2:3]  # [B,8]
 
         x = torch.cat([ecg_emb, ecg_aux, imu, spo2], dim=-1)  # [B,796]
         x = self.input_norm(x)
-        return self.mlp(x)                                     # [B,5]
+        return self.mlp(x)  # [B,5]

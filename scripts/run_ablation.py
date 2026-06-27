@@ -9,6 +9,7 @@
     python scripts/run_ablation.py --epochs 40
     python scripts/run_ablation.py --epochs 40 --only E0,E2   # 일부만
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,7 +34,8 @@ from p2fusion.models.gated_fusion import GatedFusionModel
 from p2fusion.schema import CLASS_NAMES, NUM_CLASSES
 
 DATA_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "synthetic"
-DEVICE   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 실험 변형 정의
@@ -41,13 +43,19 @@ DEVICE   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #   factory(args) -> model
 def _gated(gate_input_norm=True, aux=0.3):
     def f(a):
-        return GatedFusionModel(gate_input_norm=gate_input_norm,
-                                dropout=a.dropout, aux_loss_weight=aux)
+        return GatedFusionModel(
+            gate_input_norm=gate_input_norm, dropout=a.dropout, aux_loss_weight=aux
+        )
+
     return f
 
+
 VARIANTS = {
-    "E0_concat": (lambda a: ConcatMLP(dropout_p=a.dropout), "ConcatMLP 베이스라인 (게이트 없음)"),
-    "E1_gated":  (_gated(),  "Confidence-Gated Fusion"),
+    "E0_concat": (
+        lambda a: ConcatMLP(dropout_p=a.dropout),
+        "ConcatMLP 베이스라인 (게이트 없음)",
+    ),
+    "E1_gated": (_gated(), "Confidence-Gated Fusion"),
 }
 
 
@@ -67,7 +75,9 @@ def per_class_recall(preds, labels):
     rec = []
     for c in range(NUM_CLASSES):
         denom = (labels == c).sum()
-        rec.append(float(((preds == c) & (labels == c)).sum() / denom) if denom > 0 else 0.0)
+        rec.append(
+            float(((preds == c) & (labels == c)).sum() / denom) if denom > 0 else 0.0
+        )
     return rec
 
 
@@ -119,7 +129,9 @@ def train_one(model, train_loader, val_loader, epochs, lr):
         f1, _ = macro_f1(preds, labels)
         if f1 > best_f1:
             best_f1 = f1
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_state = {
+                k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            }
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -137,17 +149,23 @@ def main():
     ap.add_argument("--only", default="", help="쉼표구분 변형 prefix (예: E0,E2)")
     args = ap.parse_args()
 
-    torch.manual_seed(args.seed); np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     print(f"Device: {DEVICE} | epochs={args.epochs} | mod_dropout={args.dropout_mod}")
 
-    train_ds = P2Dataset(DATA_DIR / "p2_synth_v1_train.npz",
-                         modality_dropout_p=args.dropout_mod, seed=args.seed)
-    val_ds   = P2Dataset(DATA_DIR / "p2_synth_v1_val.npz")
-    test_ds  = P2Dataset(DATA_DIR / "p2_synth_v1_test.npz")
+    train_ds = P2Dataset(
+        DATA_DIR / "p2_synth_v1_train.npz",
+        modality_dropout_p=args.dropout_mod,
+        seed=args.seed,
+    )
+    val_ds = P2Dataset(DATA_DIR / "p2_synth_v1_val.npz")
+    test_ds = P2Dataset(DATA_DIR / "p2_synth_v1_test.npz")
     pin = torch.cuda.is_available()
-    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, pin_memory=pin)
-    val_loader   = DataLoader(val_ds,   batch_size=512, pin_memory=pin)
-    test_loader  = DataLoader(test_ds,  batch_size=512, pin_memory=pin)
+    train_loader = DataLoader(
+        train_ds, batch_size=args.batch_size, shuffle=True, pin_memory=pin
+    )
+    val_loader = DataLoader(val_ds, batch_size=512, pin_memory=pin)
+    test_loader = DataLoader(test_ds, batch_size=512, pin_memory=pin)
 
     only = set(s.strip() for s in args.only.split(",") if s.strip())
     results = {}
@@ -155,7 +173,7 @@ def main():
     for key, (factory, desc) in VARIANTS.items():
         if only and not any(key.startswith(o) for o in only):
             continue
-        print(f"\n{'='*70}\n[{key}] {desc}")
+        print(f"\n{'=' * 70}\n[{key}] {desc}")
         t0 = time.time()
         torch.manual_seed(args.seed)  # 동일 init
         model = factory(args)
@@ -174,27 +192,49 @@ def main():
             miss[m_name], _ = macro_f1(mp, ml)
 
         results[key] = {
-            "desc": desc, "params": n_params, "val_f1": val_f1,
-            "clean_f1": clean_f1, "recall": recall, "miss": miss,
+            "desc": desc,
+            "params": n_params,
+            "val_f1": val_f1,
+            "clean_f1": clean_f1,
+            "recall": recall,
+            "miss": miss,
             "sec": time.time() - t0,
         }
-        print(f"  params={n_params:,}  val_F1={val_f1:.4f}  clean_test_F1={clean_f1:.4f}  ({results[key]['sec']:.0f}s)")
-        print("  recall: " + "  ".join(f"{CLASS_NAMES[c][:6]}={recall[c]:.3f}" for c in range(NUM_CLASSES)))
-        print(f"  결측: drop_ecg={miss['drop_ecg']:.3f}  drop_imu={miss['drop_imu']:.3f}  drop_spo2={miss['drop_spo2']:.3f}")
+        print(
+            f"  params={n_params:,}  val_F1={val_f1:.4f}  clean_test_F1={clean_f1:.4f}  ({results[key]['sec']:.0f}s)"
+        )
+        print(
+            "  recall: "
+            + "  ".join(
+                f"{CLASS_NAMES[c][:6]}={recall[c]:.3f}" for c in range(NUM_CLASSES)
+            )
+        )
+        print(
+            f"  결측: drop_ecg={miss['drop_ecg']:.3f}  drop_imu={miss['drop_imu']:.3f}  drop_spo2={miss['drop_spo2']:.3f}"
+        )
 
     # ── 비교표 ──
-    print(f"\n\n{'='*90}\n  ABLATION 요약  (clean = 전모달 test macro-F1, cardiac = class2 recall)\n{'='*90}")
+    print(
+        f"\n\n{'=' * 90}\n  ABLATION 요약  (clean = 전모달 test macro-F1, cardiac = class2 recall)\n{'=' * 90}"
+    )
     hdr = f"{'variant':<22}{'clean':>8}{'cardiac':>9}{'-ECG':>8}{'-IMU':>8}{'-SpO2':>8}"
-    print(hdr); print("-" * len(hdr))
+    print(hdr)
+    print("-" * len(hdr))
     for key, r in results.items():
-        print(f"{key:<22}{r['clean_f1']:>8.4f}{r['recall'][2]:>9.3f}"
-              f"{r['miss']['drop_ecg']:>8.3f}{r['miss']['drop_imu']:>8.3f}{r['miss']['drop_spo2']:>8.3f}")
+        print(
+            f"{key:<22}{r['clean_f1']:>8.4f}{r['recall'][2]:>9.3f}"
+            f"{r['miss']['drop_ecg']:>8.3f}{r['miss']['drop_imu']:>8.3f}{r['miss']['drop_spo2']:>8.3f}"
+        )
     print("-" * len(hdr))
 
     # 최선 추천
     if results:
-        best = max(results.items(), key=lambda kv: (kv[1]['clean_f1'], kv[1]['recall'][2]))
-        print(f"\n최고 clean_F1: {best[0]} ({best[1]['clean_f1']:.4f}, cardiac={best[1]['recall'][2]:.3f})")
+        best = max(
+            results.items(), key=lambda kv: (kv[1]["clean_f1"], kv[1]["recall"][2])
+        )
+        print(
+            f"\n최고 clean_F1: {best[0]} ({best[1]['clean_f1']:.4f}, cardiac={best[1]['recall'][2]:.3f})"
+        )
 
 
 if __name__ == "__main__":

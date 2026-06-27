@@ -21,6 +21,7 @@ SisFall 파일 포맷:
   data/interim/sisfall_imu_features.npz
   키: feat[N,12], label[N] (3=낙상, 1=ADL), fname[N]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,17 +39,17 @@ try:
 except Exception:
     pass
 
-DATA_DIR  = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/sisfall"
-OUT_DIR   = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim"
-FS        = 200.0   # Hz
+DATA_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/sisfall"
+OUT_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim"
+FS = 200.0  # Hz
 
 # SisFall 가속도 단위 변환 (ADXL345 ±16g 모드: 512 LSB/g)
-ACCEL_SCALE = 1.0 / 512.0   # LSB → g
+ACCEL_SCALE = 1.0 / 512.0  # LSB → g
 # 자이로 ITG3200 (14.375 LSB/(deg/s)) → rad/s
-GYRO_SCALE  = (1.0 / 14.375) * (np.pi / 180.0)
+GYRO_SCALE = (1.0 / 14.375) * (np.pi / 180.0)
 
 # 윈도우: 낙상 중앙 2.5s 포함 3s (600 샘플)
-WINDOW_LEN  = int(FS * 3)   # 600
+WINDOW_LEN = int(FS * 3)  # 600
 
 
 def parse_sisfall_file(path: Path) -> np.ndarray | None:
@@ -83,21 +84,23 @@ def extract_window(data: np.ndarray, is_fall: bool) -> np.ndarray:
     if is_fall:
         # 1차 가속도계(열 0~2)의 SMV에서 최대 지점 중심
         accel = data[:, :3] * ACCEL_SCALE
-        smv = np.sqrt((accel ** 2).sum(axis=1))
+        smv = np.sqrt((accel**2).sum(axis=1))
         peak_idx = int(np.argmax(smv))
         half = WINDOW_LEN // 2
         start = max(0, peak_idx - half)
-        end   = start + WINDOW_LEN
+        end = start + WINDOW_LEN
         if end > T:
-            end = T; start = T - WINDOW_LEN
+            end = T
+            start = T - WINDOW_LEN
     else:
         # ADL: 중앙
         mid = T // 2
         half = WINDOW_LEN // 2
         start = max(0, mid - half)
-        end   = start + WINDOW_LEN
+        end = start + WINDOW_LEN
         if end > T:
-            end = T; start = T - WINDOW_LEN
+            end = T
+            start = T - WINDOW_LEN
 
     return data[start:end]
 
@@ -105,11 +108,11 @@ def extract_window(data: np.ndarray, is_fall: bool) -> np.ndarray:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=str(DATA_DIR))
-    ap.add_argument("--out-dir",  default=str(OUT_DIR))
+    ap.add_argument("--out-dir", default=str(OUT_DIR))
     args = ap.parse_args()
 
     data_dir = Path(args.data_dir)
-    out_dir  = Path(args.out_dir)
+    out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 파일 탐색
@@ -118,7 +121,9 @@ def main():
         print(f"[ERROR] .txt 파일 없음: {data_dir}")
         print("  SisFall을 먼저 다운로드하세요:")
         print("  https://github.com/ferrucci-franco/SISFALL  또는")
-        print("  https://ieee-dataport.org/open-access/sisfall-fall-and-movement-dataset")
+        print(
+            "  https://ieee-dataport.org/open-access/sisfall-fall-and-movement-dataset"
+        )
         sys.exit(1)
 
     print(f"SisFall 파일: {len(txt_files)}개")
@@ -130,18 +135,20 @@ def main():
         stem = path.stem.upper()
         # 파일명에서 activity 추출: F??=낙상, D??=ADL
         is_fall = stem.startswith("F")
-        is_adl  = stem.startswith("D")
+        is_adl = stem.startswith("D")
         if not (is_fall or is_adl):
-            skip += 1; continue
+            skip += 1
+            continue
 
         data = parse_sisfall_file(path)
         if data is None:
-            skip += 1; continue
+            skip += 1
+            continue
 
         # 단위 변환: 가속도(0~5 → g), 자이로(6~8 → rad/s)
         # SisFall은 두 가속도계 중 ADXL345(0~2)를 1차로 사용
         data_scaled = data.copy()
-        data_scaled[:, :6] *= ACCEL_SCALE   # 두 가속도계 모두 변환
+        data_scaled[:, :6] *= ACCEL_SCALE  # 두 가속도계 모두 변환
         data_scaled[:, 6:] *= GYRO_SCALE
 
         win = extract_window(data_scaled, is_fall)
@@ -150,10 +157,10 @@ def main():
         feat = window_to_imu_feat(imu6, fs=FS, accel_unit="g")
 
         feats.append(feat)
-        labels.append(3 if is_fall else 1)    # 3=낙상, 1=ADL(운동)
+        labels.append(3 if is_fall else 1)  # 3=낙상, 1=ADL(운동)
         fnames.append(path.name)
 
-    feats  = np.stack(feats).astype(np.float32)
+    feats = np.stack(feats).astype(np.float32)
     labels = np.array(labels, dtype=np.int64)
     fnames = np.array(fnames)
 
@@ -161,12 +168,13 @@ def main():
     np.savez_compressed(out_path, feat=feats, label=labels, fname=fnames)
 
     fall_n = int((labels == 3).sum())
-    adl_n  = int((labels == 1).sum())
+    adl_n = int((labels == 1).sum())
     print(f"추출 완료: {len(feats)}개 (낙상={fall_n}, ADL={adl_n}, skip={skip})")
     print(f"저장: {out_path}")
 
     # 피처 통계 요약 (class_priors 보정용)
     from p2fusion.schema import IMU_FEATURES
+
     print("\n=== 낙상 피처 통계 (class_priors 보정 참고) ===")
     fall_feats = feats[labels == 3]
     for i, name in enumerate(IMU_FEATURES):

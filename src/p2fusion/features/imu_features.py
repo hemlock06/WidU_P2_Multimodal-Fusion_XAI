@@ -9,6 +9,7 @@
   자이로: rad/s
   샘플링레이트: fs (Hz)
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,7 +25,7 @@ _G = 9.81  # m/s²
 
 def _smv(accel: np.ndarray) -> np.ndarray:
     """Signal Magnitude Vector: sqrt(ax²+ay²+az²)"""
-    return np.sqrt((accel ** 2).sum(axis=1))
+    return np.sqrt((accel**2).sum(axis=1))
 
 
 def _dominant_freq(smv: np.ndarray, fs: float) -> float:
@@ -68,8 +69,9 @@ def _tilt_change(accel: np.ndarray) -> float:
     return float(tilt_deg.max() - tilt_deg.min())
 
 
-def extract_imu_features(accel: np.ndarray, gyro: np.ndarray,
-                          fs: float = 200.0) -> np.ndarray:
+def extract_imu_features(
+    accel: np.ndarray, gyro: np.ndarray, fs: float = 200.0
+) -> np.ndarray:
     """
     Args:
         accel: [T, 3] (ax, ay, az) in g
@@ -81,8 +83,8 @@ def extract_imu_features(accel: np.ndarray, gyro: np.ndarray,
     """
     assert accel.shape[1] == 3 and gyro.shape[1] == 3
 
-    smv = _smv(accel)                     # [T]
-    gyro_mag = np.sqrt((gyro ** 2).sum(axis=1))  # [T]
+    smv = _smv(accel)  # [T]
+    gyro_mag = np.sqrt((gyro**2).sum(axis=1))  # [T]
 
     # jerk (가속도 1차 미분)
     jerk = np.diff(smv, prepend=smv[0]) * fs
@@ -95,27 +97,31 @@ def extract_imu_features(accel: np.ndarray, gyro: np.ndarray,
     # gyro energy (∫|ω|dt 근사 = mean * T)
     gyro_energy = float(gyro_mag.mean() * len(gyro_mag) / fs)
 
-    feat = np.array([
-        smv.mean(),           # 0 smv_mean
-        smv.std(),            # 1 smv_std
-        smv.max(),            # 2 smv_peak
-        smv.min(),            # 3 smv_min
-        jerk_peak,            # 4 jerk_peak
-        gyro_mag.max(),       # 5 gyro_peak
-        gyro_energy,          # 6 gyro_energy
-        _tilt_change(accel),  # 7 tilt_change
-        float(smv.var()),     # 8 act_energy
-        _dominant_freq(smv, fs),  # 9 dom_freq
-        _spectral_entropy(smv),   # 10 spec_entropy
-        impact_count,             # 11 impact_count
-    ], dtype=np.float32)
+    feat = np.array(
+        [
+            smv.mean(),  # 0 smv_mean
+            smv.std(),  # 1 smv_std
+            smv.max(),  # 2 smv_peak
+            smv.min(),  # 3 smv_min
+            jerk_peak,  # 4 jerk_peak
+            gyro_mag.max(),  # 5 gyro_peak
+            gyro_energy,  # 6 gyro_energy
+            _tilt_change(accel),  # 7 tilt_change
+            float(smv.var()),  # 8 act_energy
+            _dominant_freq(smv, fs),  # 9 dom_freq
+            _spectral_entropy(smv),  # 10 spec_entropy
+            impact_count,  # 11 impact_count
+        ],
+        dtype=np.float32,
+    )
 
     assert len(feat) == len(IMU_FEATURES), f"{len(feat)} != {len(IMU_FEATURES)}"
     return feat
 
 
-def window_to_imu_feat(data: np.ndarray, fs: float = 200.0,
-                        accel_unit: str = "g") -> np.ndarray:
+def window_to_imu_feat(
+    data: np.ndarray, fs: float = 200.0, accel_unit: str = "g"
+) -> np.ndarray:
     """raw 윈도우 [T, 6] → IMU 피처 [12].
 
     Args:
@@ -123,7 +129,7 @@ def window_to_imu_feat(data: np.ndarray, fs: float = 200.0,
         accel_unit: "g" (이미 g단위) | "ms2" (m/s² → g 변환)
     """
     accel = data[:, :3].copy()
-    gyro  = data[:, 3:].copy()
+    gyro = data[:, 3:].copy()
     if accel_unit == "ms2":
         accel /= _G
     return extract_imu_features(accel, gyro, fs=fs)

@@ -43,3 +43,5 @@ results/*.npz
 
 # 스크래치 실험 출력(언더스코어 접두)
 results/_*
+
+.pytest_cache/

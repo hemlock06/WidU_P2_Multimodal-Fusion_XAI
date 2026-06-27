@@ -3,6 +3,7 @@
 입력: raw SpO2 시계열 [T] (%), sampling rate fs
 출력: schema.SPO2_FEATURES 순서의 float32 벡터 [8]
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,17 +25,17 @@ def extract_spo2_features(spo2: np.ndarray, fs: float = 1.0) -> np.ndarray:
     spo2 = spo2.astype(np.float32)
     n = len(spo2)
 
-    mean_val   = float(spo2.mean())
-    nadir      = float(spo2.min())
-    current    = float(spo2[-1])
-    std_val    = float(spo2.std())
+    mean_val = float(spo2.mean())
+    nadir = float(spo2.min())
+    current = float(spo2[-1])
+    std_val = float(spo2.std())
 
     # desaturation rate (%p/분): 최대 하강 기울기 (슬라이딩 윈도우 60s)
     win_samples = max(1, int(fs * 60))
     if n > win_samples:
         drops = []
         for i in range(0, n - win_samples, max(1, win_samples // 10)):
-            drop = spo2[i] - spo2[i:i + win_samples].min()
+            drop = spo2[i] - spo2[i : i + win_samples].min()
             drops.append(drop)
         desat_rate = float(max(drops)) if drops else 0.0
     else:
@@ -54,16 +55,19 @@ def extract_spo2_features(spo2: np.ndarray, fs: float = 1.0) -> np.ndarray:
     else:
         recovery_slope = 0.0
 
-    feat = np.array([
-        mean_val,         # 0 spo2_mean
-        nadir,            # 1 spo2_nadir
-        current,          # 2 spo2_current
-        desat_rate,       # 3 desat_rate
-        time_below_90,    # 4 time_below_90
-        time_below_88,    # 5 time_below_88
-        recovery_slope,   # 6 recovery_slope
-        std_val,          # 7 spo2_std
-    ], dtype=np.float32)
+    feat = np.array(
+        [
+            mean_val,  # 0 spo2_mean
+            nadir,  # 1 spo2_nadir
+            current,  # 2 spo2_current
+            desat_rate,  # 3 desat_rate
+            time_below_90,  # 4 time_below_90
+            time_below_88,  # 5 time_below_88
+            recovery_slope,  # 6 recovery_slope
+            std_val,  # 7 spo2_std
+        ],
+        dtype=np.float32,
+    )
 
     assert len(feat) == len(SPO2_FEATURES), f"{len(feat)} != {len(SPO2_FEATURES)}"
     return feat

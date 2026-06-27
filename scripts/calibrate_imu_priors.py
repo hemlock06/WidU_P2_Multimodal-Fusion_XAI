@@ -13,6 +13,7 @@
 출력: 각 클래스 IMU 피처 (mean, std, p2, p98) → class_priors 붙여넣기용 + npz 저장
 사용: python scripts/calibrate_imu_priors.py
 """
+
 from __future__ import annotations
 
 import glob
@@ -33,15 +34,17 @@ try:
 except Exception:
     pass
 
-PTT_DIR  = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
-SISFALL  = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim/sisfall_imu_features.npz"
-OUT      = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim/imu_calibration.npz"
+PTT_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "raw/ptt_ppg"
+SISFALL = (
+    Path(os.environ.get("P2_DATA_DIR", "data")) / "interim/sisfall_imu_features.npz"
+)
+OUT = Path(os.environ.get("P2_DATA_DIR", "data")) / "interim/imu_calibration.npz"
 
 FS_TARGET = 200.0
-WIN_SEC   = 3.0
-WIN_LEN   = int(FS_TARGET * WIN_SEC)   # 600
-DEG2RAD   = np.pi / 180.0
-SKIP_SEC  = 20.0   # 시작/끝 전이 구간 제외
+WIN_SEC = 3.0
+WIN_LEN = int(FS_TARGET * WIN_SEC)  # 600
+DEG2RAD = np.pi / 180.0
+SKIP_SEC = 20.0  # 시작/끝 전이 구간 제외
 
 
 def ptt_windows(record_path: str) -> list[np.ndarray]:
@@ -49,8 +52,8 @@ def ptt_windows(record_path: str) -> list[np.ndarray]:
     rec = wfdb.rdrecord(record_path)
     sig = rec.p_signal.astype(np.float64)
     fs = float(rec.fs)
-    accel = sig[:, 12:15]            # a_x,a_y,a_z (m/s²)
-    gyro  = sig[:, 15:18] * DEG2RAD  # deg/s → rad/s
+    accel = sig[:, 12:15]  # a_x,a_y,a_z (m/s²)
+    gyro = sig[:, 15:18] * DEG2RAD  # deg/s → rad/s
     imu6 = np.concatenate([accel, gyro], axis=1)  # [T,6]
 
     # 500 → 200 Hz 리샘플 (up=2, down=5)
@@ -64,7 +67,7 @@ def ptt_windows(record_path: str) -> list[np.ndarray]:
 
     feats = []
     for s in range(0, len(imu6) - WIN_LEN + 1, WIN_LEN):
-        win = imu6[s:s + WIN_LEN]
+        win = imu6[s : s + WIN_LEN]
         feats.append(window_to_imu_feat(win, fs=FS_TARGET, accel_unit="ms2"))
     return feats
 
@@ -86,8 +89,12 @@ def summarize(feats: np.ndarray) -> dict:
     out = {}
     for i, name in enumerate(IMU_FEATURES):
         col = feats[:, i]
-        out[name] = (float(col.mean()), float(col.std()),
-                     float(np.percentile(col, 2)), float(np.percentile(col, 98)))
+        out[name] = (
+            float(col.mean()),
+            float(col.std()),
+            float(np.percentile(col, 2)),
+            float(np.percentile(col, 98)),
+        )
     return out
 
 
@@ -97,7 +104,7 @@ def print_prior_block(cls: int, label: str, stats: dict):
     items = list(IMU_FEATURES)
     for j in range(0, len(items), 2):
         parts = []
-        for name in items[j:j+2]:
+        for name in items[j : j + 2]:
             m, s, lo, hi = stats[name]
             parts.append(f'"{name}": ({m:.3f}, {s:.3f}, {lo:.3f}, {hi:.3f})')
         print("        " + ", ".join(parts) + ",")
@@ -106,11 +113,17 @@ def print_prior_block(cls: int, label: str, stats: dict):
 
 def main():
     print("=== PTT-PPG 윈도우 추출 (200Hz, 3초) ===")
-    sit  = collect_ptt("sit")
+    sit = collect_ptt("sit")
     walk = collect_ptt("walk")
-    run  = collect_ptt("run")
-    active = np.vstack([walk, run]) if len(walk) and len(run) else (walk if len(walk) else run)
-    print(f"sit={len(sit)} windows, walk={len(walk)}, run={len(run)}, active={len(active)}")
+    run = collect_ptt("run")
+    active = (
+        np.vstack([walk, run])
+        if len(walk) and len(run)
+        else (walk if len(walk) else run)
+    )
+    print(
+        f"sit={len(sit)} windows, walk={len(walk)}, run={len(run)}, active={len(active)}"
+    )
 
     print("\n=== SisFall 낙상 (기존 200Hz 3초 추출 재사용) ===")
     sf = np.load(SISFALL)
@@ -122,15 +135,15 @@ def main():
         sys.exit(1)
 
     # 클래스별 통계
-    stats_rest    = summarize(sit)
-    stats_active  = summarize(active)
-    stats_fall    = summarize(fall)
+    stats_rest = summarize(sit)
+    stats_active = summarize(active)
+    stats_fall = summarize(fall)
 
     # 저장
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(OUT,
-        sit=sit, active=active, fall=fall,
-        feature_names=np.array(IMU_FEATURES))
+    np.savez_compressed(
+        OUT, sit=sit, active=active, fall=fall, feature_names=np.array(IMU_FEATURES)
+    )
     print(f"\n저장: {OUT}")
 
     print("\n" + "=" * 70)

@@ -6,6 +6,7 @@
 
 사용: python scripts/demo_xai.py
 """
+
 from __future__ import annotations
 
 import os
@@ -27,21 +28,26 @@ from p2fusion.xai import (
     generate_combined_explanation,
 )
 
-_DD   = os.environ.get("P2_DATA_DIR", "data")
-CKPT  = os.path.join(_DD, "checkpoints", "p2_gated_11882", "best_model.pt")
-DATA  = os.path.join(_DD, "synthetic", "p2_synth_vf_test.npz")
+_DD = os.environ.get("P2_DATA_DIR", "data")
+CKPT = os.path.join(_DD, "checkpoints", "p2_gated_11882", "best_model.pt")
+DATA = os.path.join(_DD, "synthetic", "p2_synth_vf_test.npz")
 CLASS = ["정상안정", "정상활동", "심혈관", "낙상", "저산소"]
-EXPECTED_MOD = {2: 0, 3: 1, 4: 2}   # 심혈관→ECG, 낙상→IMU, 저산소→SpO2
+EXPECTED_MOD = {2: 0, 3: 1, 4: 2}  # 심혈관→ECG, 낙상→IMU, 저산소→SpO2
 
 
 def load_model():
     ck = torch.load(CKPT, map_location="cpu")
     a = ck["args"]
-    m = GatedFusionModel(dropout=a["dropout"], aux_loss_weight=a["aux_weight"],
-                         fusion_level=a["fusion_level"],
-                         gate_mode=a["gate_mode"], temperature=a["temperature"],
-                         emb_bottleneck=a["emb_bottleneck"])
-    m.load_state_dict(ck["model_state"]); m.eval()
+    m = GatedFusionModel(
+        dropout=a["dropout"],
+        aux_loss_weight=a["aux_weight"],
+        fusion_level=a["fusion_level"],
+        gate_mode=a["gate_mode"],
+        temperature=a["temperature"],
+        emb_bottleneck=a["emb_bottleneck"],
+    )
+    m.load_state_dict(ck["model_state"])
+    m.eval()
     return m, ck["val_macro_f1"]
 
 
@@ -49,17 +55,31 @@ def main():
     dev = torch.device("cpu")
     m, vf1 = load_model()
     d = np.load(DATA)
-    arrays = {"ecg_emb": d["ecg_embedding"], "ecg_aux": d["ecg_aux"],
-              "imu": d["imu_feat"], "spo2": d["spo2_feat"], "mask": d["modality_mask"]}
+    arrays = {
+        "ecg_emb": d["ecg_embedding"],
+        "ecg_aux": d["ecg_aux"],
+        "imu": d["imu_feat"],
+        "spo2": d["spo2_feat"],
+        "mask": d["modality_mask"],
+    }
     labels = d["label"]
     gw, cf, ul, pr = collect_gate(m, arrays, dev)
 
     print(f"모델 p2_gated_11882 (val macro-F1 {vf1:.3f}) | 데이터 {len(labels)} 윈도우")
-    print("클래스별 게이트 기여:  " + " ".join(
-        f"{CLASS[c]}=[{'/'.join(f'{x:.2f}' for x in gw[labels == c].mean(0))}]" for c in [2, 3, 4]))
+    print(
+        "클래스별 게이트 기여:  "
+        + " ".join(
+            f"{CLASS[c]}=[{'/'.join(f'{x:.2f}' for x in gw[labels == c].mean(0))}]"
+            for c in [2, 3, 4]
+        )
+    )
 
     for c in [2, 3, 4]:
-        i = int(np.where((labels == c) & (pr == c) & (gw.argmax(1) == EXPECTED_MOD[c]))[0][0])
+        i = int(
+            np.where((labels == c) & (pr == c) & (gw.argmax(1) == EXPECTED_MOD[c]))[0][
+                0
+            ]
+        )
         s = {k: arrays[k][i] for k in arrays}
         print("\n" + "=" * 58)
         print("◆ 연구용 (기술 설명)")

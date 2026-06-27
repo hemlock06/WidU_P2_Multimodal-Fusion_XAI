@@ -23,6 +23,7 @@ P1 점수 실사용:
 
 인터페이스: GatedFusionModel과 동일한 batch dict 입력/출력 → train_fusion.py 호환
 """
+
 from __future__ import annotations
 
 from typing import Dict, Optional
@@ -36,16 +37,21 @@ from p2fusion.schema import EMB_DIM, IMU_DIM, NUM_CLASSES, SPO2_DIM
 
 # ecg_aux 구성 (schema.flat_ecg_aux 순서)
 # [cardiac_probs×5, emergency_score, hr_bpm, rhythm_regularity]
-ECG_AUX_DIM  = 8
-ECG_BN_DIM   = 16   # 병목 임베딩 차원 (과적합 방지 확정값)
-ECG_TOK_DIM  = ECG_BN_DIM + ECG_AUX_DIM   # ECG 토큰 입력 = 24
-D_MODEL      = 128   # Transformer hidden dim
-N_HEADS      = 4
-N_LAYERS     = 2
+ECG_AUX_DIM = 8
+ECG_BN_DIM = 16  # 병목 임베딩 차원 (과적합 방지 확정값)
+ECG_TOK_DIM = ECG_BN_DIM + ECG_AUX_DIM  # ECG 토큰 입력 = 24
+D_MODEL = 128  # Transformer hidden dim
+N_HEADS = 4
+N_LAYERS = 2
 
 
-def _mlp(in_dim: int, hidden_dims: tuple, out_dim: int,
-         dropout: float = 0.2, norm: bool = True) -> nn.Sequential:
+def _mlp(
+    in_dim: int,
+    hidden_dims: tuple,
+    out_dim: int,
+    dropout: float = 0.2,
+    norm: bool = True,
+) -> nn.Sequential:
     layers: list = []
     d = in_dim
     for h in hidden_dims:
@@ -73,13 +79,13 @@ class CrossModalAttentionFusion(nn.Module):
 
     def __init__(
         self,
-        d_model:         int   = D_MODEL,
-        n_heads:         int   = N_HEADS,
-        n_layers:        int   = N_LAYERS,
-        dropout:         float = 0.3,
+        d_model: int = D_MODEL,
+        n_heads: int = N_HEADS,
+        n_layers: int = N_LAYERS,
+        dropout: float = 0.3,
         aux_loss_weight: float = 0.3,
-        emb_bottleneck:  int   = ECG_BN_DIM,
-        num_classes:     int   = NUM_CLASSES,
+        emb_bottleneck: int = ECG_BN_DIM,
+        num_classes: int = NUM_CLASSES,
     ):
         super().__init__()
         self.aux_loss_weight = aux_loss_weight
@@ -89,18 +95,18 @@ class CrossModalAttentionFusion(nn.Module):
         # ── ECG 임베딩 병목 (768 → emb_bottleneck) ──────────────────────────
         self.ecg_bn = nn.Sequential(
             nn.Linear(EMB_DIM, emb_bottleneck),
-            nn.Dropout(0.5),   # 강한 dropout으로 과적합 방지 확정
+            nn.Dropout(0.5),  # 강한 dropout으로 과적합 방지 확정
         )
 
         # ── 모달리티별 토큰 투영 ─────────────────────────────────────────────
         # ECG 토큰: [emb_bn(16) + ecg_aux(8)] = 24 → d_model
         ecg_tok_in = emb_bottleneck + ECG_AUX_DIM
-        self.ecg_proj  = nn.Sequential(
+        self.ecg_proj = nn.Sequential(
             nn.Linear(ecg_tok_in, d_model),
             nn.LayerNorm(d_model),
         )
         # IMU 토큰: 12 → d_model
-        self.imu_proj  = nn.Sequential(
+        self.imu_proj = nn.Sequential(
             nn.Linear(IMU_DIM, d_model),
             nn.LayerNorm(d_model),
         )
@@ -114,11 +120,11 @@ class CrossModalAttentionFusion(nn.Module):
         enc_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=n_heads,
-            dim_feedforward=d_model * 2,   # 작게 유지 (토큰 3개)
+            dim_feedforward=d_model * 2,  # 작게 유지 (토큰 3개)
             dropout=dropout,
             activation="gelu",
             batch_first=True,
-            norm_first=True,   # Pre-LN: 학습 안정성
+            norm_first=True,  # Pre-LN: 학습 안정성
         )
         self.transformer = nn.TransformerEncoder(enc_layer, num_layers=n_layers)
 
@@ -127,8 +133,8 @@ class CrossModalAttentionFusion(nn.Module):
         self.cls_head = _mlp(d_model, (d_model // 2,), num_classes, dropout=dropout)
 
         # 보조 (unimodal): 어텐션 후 각 토큰 → 5-class (P3 해석 + 학습 정규화)
-        self.ecg_uni_head  = nn.Linear(d_model, num_classes)
-        self.imu_uni_head  = nn.Linear(d_model, num_classes)
+        self.ecg_uni_head = nn.Linear(d_model, num_classes)
+        self.imu_uni_head = nn.Linear(d_model, num_classes)
         self.spo2_uni_head = nn.Linear(d_model, num_classes)
 
         # ── 어텐션 가중치 저장용 훅 ──────────────────────────────────────────
@@ -155,26 +161,26 @@ class CrossModalAttentionFusion(nn.Module):
           "gate_weights"       [B, 3]     어텐션 합산 (GatedFusion 호환용)
           "conf_per_modality"  [B, 3]     unimodal 확신도 (분석용)
         """
-        ecg_emb = batch["ecg_emb"]   # [B, 768]
-        ecg_aux = batch["ecg_aux"]   # [B, 8]
-        imu     = batch["imu"]       # [B, 12]
-        spo2    = batch["spo2"]      # [B, 8]
-        mask    = batch["mask"]      # [B, 3]
+        ecg_emb = batch["ecg_emb"]  # [B, 768]
+        ecg_aux = batch["ecg_aux"]  # [B, 8]
+        imu = batch["imu"]  # [B, 12]
+        spo2 = batch["spo2"]  # [B, 8]
+        mask = batch["mask"]  # [B, 3]
 
         B = ecg_emb.size(0)
 
         # ── Step 1: 토큰 구성 ───────────────────────────────────────────────
         # ECG: 임베딩 병목 + P1 점수 전부 concat → ECG 토큰
-        ecg_bn   = self.ecg_bn(ecg_emb)                      # [B, 16]
-        ecg_tok  = torch.cat([ecg_bn, ecg_aux], dim=-1)       # [B, 26]
-        ecg_tok  = self.ecg_proj(ecg_tok)                     # [B, d_model]
+        ecg_bn = self.ecg_bn(ecg_emb)  # [B, 16]
+        ecg_tok = torch.cat([ecg_bn, ecg_aux], dim=-1)  # [B, 26]
+        ecg_tok = self.ecg_proj(ecg_tok)  # [B, d_model]
 
-        imu_tok  = self.imu_proj(imu)                         # [B, d_model]
-        spo2_tok = self.spo2_proj(spo2)                       # [B, d_model]
+        imu_tok = self.imu_proj(imu)  # [B, d_model]
+        spo2_tok = self.spo2_proj(spo2)  # [B, d_model]
 
         # 결측 모달리티 → 해당 토큰 zero-out (mask=0이면 토큰을 0으로)
-        ecg_tok  = ecg_tok  * mask[:, 0:1]                    # [B, d_model]
-        imu_tok  = imu_tok  * mask[:, 1:2]
+        ecg_tok = ecg_tok * mask[:, 0:1]  # [B, d_model]
+        imu_tok = imu_tok * mask[:, 1:2]
         spo2_tok = spo2_tok * mask[:, 2:3]
 
         # 토큰 시퀀스: [ECG, IMU, SpO2] → [B, 3, d_model]
@@ -183,10 +189,10 @@ class CrossModalAttentionFusion(nn.Module):
         # ── Step 2: Cross-Modal Attention ────────────────────────────────────
         # 결측 토큰은 key/value에서 무시 (src_key_padding_mask)
         # mask: 1=있음, 0=없음 → padding_mask: True=마스킹(무시)
-        pad_mask = (mask < 0.5)  # [B, 3], True면 해당 토큰 무시
+        pad_mask = mask < 0.5  # [B, 3], True면 해당 토큰 무시
 
         # 모든 토큰이 결측인 경우 방지
-        all_masked = pad_mask.all(dim=-1, keepdim=True)       # [B, 1]
+        all_masked = pad_mask.all(dim=-1, keepdim=True)  # [B, 1]
         if all_masked.any():
             pad_mask = pad_mask & ~all_masked.expand_as(pad_mask)
 
@@ -195,12 +201,15 @@ class CrossModalAttentionFusion(nn.Module):
         hooks: list = []
 
         for layer in self.transformer.layers:
+
             def make_hook(lst):
                 def hook(module, inp, out):
                     # TransformerEncoderLayer 내 self_attn 출력에서 weights 캡처
                     # need_weights=True로 재계산
                     pass
+
                 return hook
+
             # 훅 대신 need_weights 방식으로 대체 (아래 수동 계산)
 
         # Transformer 통과
@@ -215,7 +224,9 @@ class CrossModalAttentionFusion(nn.Module):
             # Pre-LN 구조 반영
             normed = last_layer.norm1(tokens)
             _, attn_w = last_layer.self_attn(
-                normed, normed, normed,
+                normed,
+                normed,
+                normed,
                 key_padding_mask=pad_mask,
                 need_weights=True,
                 average_attn_weights=True,  # head 평균
@@ -224,38 +235,44 @@ class CrossModalAttentionFusion(nn.Module):
 
         # ── Step 3: 분류 ─────────────────────────────────────────────────────
         # 메인: mean-pool (결측 토큰 제외)
-        valid_mask = (~pad_mask).float().unsqueeze(-1)         # [B, 3, 1]
+        valid_mask = (~pad_mask).float().unsqueeze(-1)  # [B, 3, 1]
         pooled = (ctx * valid_mask).sum(dim=1) / valid_mask.sum(dim=1).clamp(min=1)
-        logits = self.cls_head(pooled)                         # [B, 5]
+        logits = self.cls_head(pooled)  # [B, 5]
 
         # 보조: 각 토큰 단독 예측
-        ecg_uni  = self.ecg_uni_head(ctx[:, 0, :])            # [B, 5]
-        imu_uni  = self.imu_uni_head(ctx[:, 1, :])            # [B, 5]
-        spo2_uni = self.spo2_uni_head(ctx[:, 2, :])           # [B, 5]
+        ecg_uni = self.ecg_uni_head(ctx[:, 0, :])  # [B, 5]
+        imu_uni = self.imu_uni_head(ctx[:, 1, :])  # [B, 5]
+        spo2_uni = self.spo2_uni_head(ctx[:, 2, :])  # [B, 5]
 
         unimodal_logits = torch.stack([ecg_uni, imu_uni, spo2_uni], dim=1)  # [B, 3, 5]
 
         # ── Step 4: 분석용 부가 출력 ─────────────────────────────────────────
         # conf_per_modality (GatedFusion 호환)
-        conf = torch.stack([
-            F.softmax(ecg_uni,  dim=-1).max(dim=-1).values,
-            F.softmax(imu_uni,  dim=-1).max(dim=-1).values,
-            F.softmax(spo2_uni, dim=-1).max(dim=-1).values,
-        ], dim=1).detach()  # [B, 3]
+        conf = torch.stack(
+            [
+                F.softmax(ecg_uni, dim=-1).max(dim=-1).values,
+                F.softmax(imu_uni, dim=-1).max(dim=-1).values,
+                F.softmax(spo2_uni, dim=-1).max(dim=-1).values,
+            ],
+            dim=1,
+        ).detach()  # [B, 3]
 
         # gate_weights: 어텐션 행을 col 방향 합산 → [B, 3]
         # "각 모달리티가 받은 총 어텐션" → GatedFusion의 gate_weights 역할
-        attn = self._last_attn if self._last_attn is not None \
-               else torch.ones(B, 3, 3, device=logits.device) / 3
-        gate_w = attn.sum(dim=1)    # [B, 3] — 각 토큰이 쿼리로 받은 어텐션 합
+        attn = (
+            self._last_attn
+            if self._last_attn is not None
+            else torch.ones(B, 3, 3, device=logits.device) / 3
+        )
+        gate_w = attn.sum(dim=1)  # [B, 3] — 각 토큰이 쿼리로 받은 어텐션 합
         gate_w = gate_w / gate_w.sum(dim=-1, keepdim=True).clamp(min=1e-8)
 
         return {
-            "logits":            logits,
-            "unimodal_logits":   unimodal_logits,
-            "attention_weights": attn,              # [B, 3, 3]
-            "gate_weights":      gate_w,            # [B, 3]  (분석·시각화용)
-            "conf_per_modality": conf,              # [B, 3]
+            "logits": logits,
+            "unimodal_logits": unimodal_logits,
+            "attention_weights": attn,  # [B, 3, 3]
+            "gate_weights": gate_w,  # [B, 3]  (분석·시각화용)
+            "conf_per_modality": conf,  # [B, 3]
         }
 
     def loss(self, batch: dict[str, Tensor], out: dict[str, Tensor]) -> Tensor:
@@ -264,10 +281,9 @@ class CrossModalAttentionFusion(nn.Module):
         main_loss = F.cross_entropy(out["logits"], label)
 
         if self.aux_loss_weight > 0:
-            uni = out["unimodal_logits"]   # [B, 3, 5]
+            uni = out["unimodal_logits"]  # [B, 3, 5]
             aux = sum(
-                F.cross_entropy(uni[:, m, :], label)
-                for m in range(uni.size(1))
+                F.cross_entropy(uni[:, m, :], label) for m in range(uni.size(1))
             ) / uni.size(1)
             return main_loss + self.aux_loss_weight * aux
 

@@ -16,6 +16,7 @@ P1이 ECG 인코더이므로, P2의 ECG 채널은 P1 출력을 그대로 쓴다.
     label_mc         [N]       5-class (NSR=0,AF=1,Ischemia=2,Conduction=3,Ectopic=4)
     label_bin        [N]       이진 (응급=1)
 """
+
 from __future__ import annotations
 
 import math
@@ -30,11 +31,11 @@ from scipy.signal import find_peaks
 from torch.utils.data import DataLoader, Dataset
 
 # ── 경로 설정 ────────────────────────────────────────────────────────────────
-P1_REPO   = os.environ.get("P1_REPO_DIR", "../WidU_ecg-fm_emergency-detection")
-CKPT_FM   = f"{P1_REPO}/checkpoints/ecg-fm/mimic_iv_ecg_physionet_pretrained.pt"
-CKPT_P1   = f"{P1_REPO}/outputs/lora_multitask_snr_a07/lora_multitask_snr_best.pt"
-DATA_DIR  = f"{P1_REPO}/data/processed/cpsc2018_mc"
-OUT_DIR   = str(Path(os.environ.get("P2_DATA_DIR", "data")) / "p1_cache")
+P1_REPO = os.environ.get("P1_REPO_DIR", "../WidU_ecg-fm_emergency-detection")
+CKPT_FM = f"{P1_REPO}/checkpoints/ecg-fm/mimic_iv_ecg_physionet_pretrained.pt"
+CKPT_P1 = f"{P1_REPO}/outputs/lora_multitask_snr_a07/lora_multitask_snr_best.pt"
+DATA_DIR = f"{P1_REPO}/data/processed/cpsc2018_mc"
+OUT_DIR = str(Path(os.environ.get("P2_DATA_DIR", "data")) / "p1_cache")
 
 FS = 500  # ECG 샘플링레이트
 
@@ -61,16 +62,26 @@ class LoRALinear(nn.Module):
         nn.init.zeros_(self.lora_B.weight)
 
     @property
-    def bias(self):   return self.original.bias
+    def bias(self):
+        return self.original.bias
+
     @property
-    def weight(self): return self.original.weight
+    def weight(self):
+        return self.original.weight
 
     def forward(self, x):
-        return self.original(x) + self.lora_B(self.lora_A(self.dropout(x))) * self.scaling
+        return (
+            self.original(x) + self.lora_B(self.lora_A(self.dropout(x))) * self.scaling
+        )
 
 
-def inject_lora(model, rank=8, alpha=16, dropout=0.0,
-                target_suffixes=("self_attn.q_proj", "self_attn.v_proj")):
+def inject_lora(
+    model,
+    rank=8,
+    alpha=16,
+    dropout=0.0,
+    target_suffixes=("self_attn.q_proj", "self_attn.v_proj"),
+):
     for name, module in list(model.named_modules()):
         if not isinstance(module, nn.Linear):
             continue
@@ -88,35 +99,43 @@ class BinaryHead(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc = nn.Linear(768, 1)
-    def forward(self, x): return self.fc(x).squeeze(-1)
+
+    def forward(self, x):
+        return self.fc(x).squeeze(-1)
 
 
 class MulticlassHead(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc = nn.Linear(768, 5)
-    def forward(self, x): return self.fc(x)
+
+    def forward(self, x):
+        return self.fc(x)
 
 
 # ── 데이터셋 ──────────────────────────────────────────────────────────────────
 class CPSCDataset(Dataset):
     def __init__(self, split_dir: str):
-        self.signals   = np.load(os.path.join(split_dir, "signals.npy"))
+        self.signals = np.load(os.path.join(split_dir, "signals.npy"))
         self.labels_mc = np.load(os.path.join(split_dir, "labels.npy"))
-        self.labels_bin= np.load(os.path.join(split_dir, "labels_bin.npy"))
+        self.labels_bin = np.load(os.path.join(split_dir, "labels_bin.npy"))
 
-    def __len__(self): return len(self.labels_mc)
+    def __len__(self):
+        return len(self.labels_mc)
 
     def __getitem__(self, idx):
-        return (torch.tensor(self.signals[idx], dtype=torch.float32),
-                int(self.labels_mc[idx]), int(self.labels_bin[idx]))
+        return (
+            torch.tensor(self.signals[idx], dtype=torch.float32),
+            int(self.labels_mc[idx]),
+            int(self.labels_bin[idx]),
+        )
 
 
 # ── 생리지표 추정 ─────────────────────────────────────────────────────────────
 def estimate_physio(signals_np: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """signals_np: [N, 12, 5000] → hr_bpm[N], rhythm_regularity[N]"""
     N = signals_np.shape[0]
-    hr_bpm  = np.full(N, 75.0, dtype=np.float32)
+    hr_bpm = np.full(N, 75.0, dtype=np.float32)
     rhythm_reg = np.full(N, 0.9, dtype=np.float32)
 
     for i in range(N):
@@ -140,10 +159,14 @@ def main():
 
     # fairseq_signals 로드
     from fairseq_signals.utils.checkpoint_utils import load_model_and_task
+
     print("ECG-FM 로드 중...")
     result = load_model_and_task(CKPT_FM)
-    backbone = next(r for r in (result if isinstance(result, (list, tuple)) else [result])
-                    if hasattr(r, "parameters"))
+    backbone = next(
+        r
+        for r in (result if isinstance(result, (list, tuple)) else [result])
+        if hasattr(r, "parameters")
+    )
     backbone = backbone.to(device)
     for p in backbone.parameters():
         p.requires_grad_(False)
@@ -155,13 +178,15 @@ def main():
     backbone.load_state_dict(p1_ckpt["backbone_lora"], strict=False)
 
     head_bin = BinaryHead().to(device)
-    head_mc  = MulticlassHead().to(device)
+    head_mc = MulticlassHead().to(device)
     head_bin.load_state_dict(p1_ckpt["head_bin_state"])
     head_mc.load_state_dict(p1_ckpt["head_mc_state"])
 
     # 게이트 가중치 로드
     print("게이트 가중치 로드 중...")
-    backbone.eval(); head_bin.eval(); head_mc.eval()
+    backbone.eval()
+    head_bin.eval()
+    head_mc.eval()
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -178,8 +203,8 @@ def main():
                 out = backbone(source=x, padding_mask=None, features_only=True)
                 emb = out["x"].mean(dim=1)  # [B, 768]
 
-                es  = torch.sigmoid(head_bin(emb)).cpu()
-                cp  = torch.softmax(head_mc(emb), dim=-1).cpu()
+                es = torch.sigmoid(head_bin(emb)).cpu()
+                cp = torch.softmax(head_mc(emb), dim=-1).cpu()
 
                 all_emb.append(emb.cpu().numpy().astype(np.float32))
                 all_cp.append(cp.numpy().astype(np.float32))
@@ -188,10 +213,10 @@ def main():
                 all_lbin.append(np.array(lbin))
 
         emb_arr = np.concatenate(all_emb)
-        cp_arr  = np.concatenate(all_cp)
-        es_arr  = np.concatenate(all_es)
+        cp_arr = np.concatenate(all_cp)
+        es_arr = np.concatenate(all_es)
         lmc_arr = np.concatenate(all_lmc).astype(np.int64)
-        lbin_arr= np.concatenate(all_lbin).astype(np.int64)
+        lbin_arr = np.concatenate(all_lbin).astype(np.int64)
 
         # 생리지표 추정
         print("  생리지표 추정 중...")
@@ -199,7 +224,8 @@ def main():
         hr_bpm, rhythm_reg = estimate_physio(signals_all)
 
         out_path = os.path.join(OUT_DIR, f"cpsc_mc_{split}.npz")
-        np.savez_compressed(out_path,
+        np.savez_compressed(
+            out_path,
             embedding=emb_arr,
             cardiac_probs=cp_arr,
             emergency_score=es_arr,
@@ -211,9 +237,8 @@ def main():
 
         # 요약
         print(f"  저장: {out_path}")
-        print(f"  N={len(lmc_arr)}, emb={emb_arr.shape}, "
-              f"es_mean={es_arr.mean():.3f}")
-        mc_dist = {i: int((lmc_arr==i).sum()) for i in range(5)}
+        print(f"  N={len(lmc_arr)}, emb={emb_arr.shape}, es_mean={es_arr.mean():.3f}")
+        mc_dist = {i: int((lmc_arr == i).sum()) for i in range(5)}
         print(f"  mc_dist: {mc_dist}")
 
     print("\n[완료] P1 캐시 빌드 성공.")

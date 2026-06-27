@@ -8,6 +8,7 @@
 소스/라이선스는 configs/data.yaml 참조. 대용량이므로 기본은 dry-run(URL만 출력),
 실제 다운로드는 --run 플래그 필요. 출력: $P2_DATA_DIR/raw/<dataset>/
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,13 +30,13 @@ SOURCES = {
         "url": "https://physionet.org/files/pulse-transit-time-ppg/1.1.0/",
         "is_zip": False,
         "note": "ECG+IMU+SpO2 동시, 22명, 500Hz, ~2.9GB. PhysioNet wget 권장: "
-                "wget -r -N -c -np <url>. 클래스 0·1 앵커.",
+        "wget -r -N -c -np <url>. 클래스 0·1 앵커.",
     },
     "harespod": {
         "url": "https://www.nature.com/articles/s41597-024-03988-5",
         "is_zip": False,
         "note": "유발 저산소 SpO2/HR, 15명, 100Hz. Figshare 다운로드 링크는 논문 "
-                "Data Availability 절에서 확인. 클래스 4 앵커.",
+        "Data Availability 절에서 확인. 클래스 4 앵커.",
     },
 }
 
@@ -54,8 +55,11 @@ def download_zip(url: str, out_dir: Path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", required=True, choices=list(SOURCES))
-    ap.add_argument("--run", action="store_true",
-                    help="실제 다운로드 수행 (미지정 시 URL/안내만 출력)")
+    ap.add_argument(
+        "--run",
+        action="store_true",
+        help="실제 다운로드 수행 (미지정 시 URL/안내만 출력)",
+    )
     args = ap.parse_args()
 
     src = SOURCES[args.dataset]

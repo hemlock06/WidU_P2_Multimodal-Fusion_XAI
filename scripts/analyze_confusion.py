@@ -8,6 +8,7 @@
 사용:
     python scripts/analyze_confusion.py --ckpt data/checkpoints/p2_best/best_model.pt
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,7 +29,7 @@ from p2fusion.models.gated_fusion import GatedFusionModel
 from p2fusion.schema import CLASS_NAMES, NUM_CLASSES
 
 DATA_DIR = Path(os.environ.get("P2_DATA_DIR", "data")) / "synthetic"
-DEVICE   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # 설계 의도 혼동쌍 (P2 §8.5)
 HARD_PAIRS = [(1, 3, "운동↔낙상"), (1, 2, "운동↔심혈관")]
@@ -69,10 +70,10 @@ def collect(model, loader, drop_modality=None):
             logits = model(batch)
         preds.append(logits.argmax(-1).cpu().numpy())
         labels.append(batch["label"].cpu().numpy())
-    preds  = np.concatenate(preds)
+    preds = np.concatenate(preds)
     labels = np.concatenate(labels)
     gate_w = np.concatenate(gate_w_all) if gate_w_all else None
-    conf   = np.concatenate(conf_all)   if conf_all   else None
+    conf = np.concatenate(conf_all) if conf_all else None
     return preds, labels, gate_w, conf
 
 
@@ -98,9 +99,12 @@ def print_cm(cm):
     short = [n[:7] for n in CLASS_NAMES]
     col_hdr = "true\\pred"
     hdr = f"{col_hdr:<12}" + "".join(f"{s:>8}" for s in short)
-    print(hdr); print("-" * len(hdr))
+    print(hdr)
+    print("-" * len(hdr))
     for r in range(NUM_CLASSES):
-        row = f"{CLASS_NAMES[r]:<12}" + "".join(f"{cm[r,c]:>8}" for c in range(NUM_CLASSES))
+        row = f"{CLASS_NAMES[r]:<12}" + "".join(
+            f"{cm[r, c]:>8}" for c in range(NUM_CLASSES)
+        )
         print(row)
     # recall per class
     print()
@@ -109,7 +113,9 @@ def print_cm(cm):
         rec = cm[c, c] / tot if tot > 0 else 0
         prec_denom = cm[:, c].sum()
         prec = cm[c, c] / prec_denom if prec_denom > 0 else 0
-        print(f"  {CLASS_NAMES[c]:<20s}: recall={rec:.3f}  precision={prec:.3f}  (N={tot})")
+        print(
+            f"  {CLASS_NAMES[c]:<20s}: recall={rec:.3f}  precision={prec:.3f}  (N={tot})"
+        )
 
 
 def main():
@@ -125,14 +131,14 @@ def main():
     loader = DataLoader(ds, batch_size=512, pin_memory=torch.cuda.is_available())
 
     # ── 1. 전체 혼동행렬 ──
-    print(f"\n{'='*60}\n1. 혼동행렬 ({args.split})\n{'='*60}")
+    print(f"\n{'=' * 60}\n1. 혼동행렬 ({args.split})\n{'=' * 60}")
     preds, labels, gate_w, conf = collect(model, loader)
     cm = confusion_matrix(preds, labels)
     print_cm(cm)
     print(f"\n  macro-F1: {macro_f1(preds, labels):.4f}")
 
     # ── 2. 혼동쌍 분석 ──
-    print(f"\n{'='*60}\n2. 설계 혼동쌍 분석\n{'='*60}")
+    print(f"\n{'=' * 60}\n2. 설계 혼동쌍 분석\n{'=' * 60}")
     for c_a, c_b, pair_name in HARD_PAIRS:
         pair_mask = (labels == c_a) | (labels == c_b)
         p_sub, l_sub = preds[pair_mask], labels[pair_mask]
@@ -142,14 +148,16 @@ def main():
         tp = ((p_sub == c_b) & (l_sub == c_b)).sum()
         fp = ((p_sub == c_b) & (l_sub == c_a)).sum()
         fn = ((p_sub == c_a) & (l_sub == c_b)).sum()
-        pair_f1 = 2*tp / (2*tp + fp + fn) if (2*tp + fp + fn) > 0 else 0.0
+        pair_f1 = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0.0
         print(f"\n  [{pair_name}]")
-        print(f"    {CLASS_NAMES[c_a]}→{CLASS_NAMES[c_b]} 오분류: {a_as_b:.3f}  "
-              f"({CLASS_NAMES[c_b]}→{CLASS_NAMES[c_a]} 오분류: {b_as_a:.3f})")
+        print(
+            f"    {CLASS_NAMES[c_a]}→{CLASS_NAMES[c_b]} 오분류: {a_as_b:.3f}  "
+            f"({CLASS_NAMES[c_b]}→{CLASS_NAMES[c_a]} 오분류: {b_as_a:.3f})"
+        )
         print(f"    {CLASS_NAMES[c_b]} 검출 F1 (쌍 내): {pair_f1:.4f}")
 
     # ── 3. 결측 강건성 곡선 (각 모달리티 0/1 masking) ──
-    print(f"\n{'='*60}\n3. 결측 강건성\n{'='*60}")
+    print(f"\n{'=' * 60}\n3. 결측 강건성\n{'=' * 60}")
     miss_names = ["ECG", "IMU", "SpO2"]
     for m_idx, mname in enumerate(miss_names):
         mp, ml, _, _ = collect(model, loader, drop_modality=m_idx)
@@ -161,12 +169,14 @@ def main():
 
     # ── 4. gate_weights 분포 (Gated만) ──
     if gate_w is not None:
-        print(f"\n{'='*60}\n4. Gate weights 분포 (ecg / imu / spo2)\n{'='*60}")
+        print(f"\n{'=' * 60}\n4. Gate weights 분포 (ecg / imu / spo2)\n{'=' * 60}")
         mnames = ["ecg", "imu", "spo2"]
         for i, mn in enumerate(mnames):
             w = gate_w[:, i]
-            print(f"  {mn}: mean={w.mean():.3f}  std={w.std():.3f}  "
-                  f"p25={np.percentile(w,25):.3f}  p75={np.percentile(w,75):.3f}")
+            print(
+                f"  {mn}: mean={w.mean():.3f}  std={w.std():.3f}  "
+                f"p25={np.percentile(w, 25):.3f}  p75={np.percentile(w, 75):.3f}"
+            )
 
         # 클래스별 평균 gate_weight
         print("\n  클래스별 평균 gate_weights (동적이면 클래스마다 달라야 함):")
@@ -174,13 +184,19 @@ def main():
         print(hdr)
         for c in range(NUM_CLASSES):
             sel = labels == c
-            if sel.sum() == 0: continue
-            row = f"  {CLASS_NAMES[c]:<20}" + "".join(f"{gate_w[sel,i].mean():>8.3f}" for i in range(3))
+            if sel.sum() == 0:
+                continue
+            row = f"  {CLASS_NAMES[c]:<20}" + "".join(
+                f"{gate_w[sel, i].mean():>8.3f}" for i in range(3)
+            )
             print(row)
-        max_ecg_diff = max(gate_w[labels==c,0].mean() for c in range(NUM_CLASSES)) - \
-                       min(gate_w[labels==c,0].mean() for c in range(NUM_CLASSES))
-        print(f"\n  ECG 가중치 클래스간 최대차: {max_ecg_diff:.4f} "
-              f"({'동적 ✓' if max_ecg_diff > 0.01 else '고정 ✗ — 게이트 붕괴'})")
+        max_ecg_diff = max(
+            gate_w[labels == c, 0].mean() for c in range(NUM_CLASSES)
+        ) - min(gate_w[labels == c, 0].mean() for c in range(NUM_CLASSES))
+        print(
+            f"\n  ECG 가중치 클래스간 최대차: {max_ecg_diff:.4f} "
+            f"({'동적 ✓' if max_ecg_diff > 0.01 else '고정 ✗ — 게이트 붕괴'})"
+        )
 
     if conf is not None:
         print("\n  클래스별 평균 confidence (ecg/imu/spo2):")
@@ -189,8 +205,11 @@ def main():
         print(hdr)
         for c in range(NUM_CLASSES):
             sel = labels == c
-            if sel.sum() == 0: continue
-            row = f"  {CLASS_NAMES[c]:<20}" + "".join(f"{conf[sel,i].mean():>8.3f}" for i in range(3))
+            if sel.sum() == 0:
+                continue
+            row = f"  {CLASS_NAMES[c]:<20}" + "".join(
+                f"{conf[sel, i].mean():>8.3f}" for i in range(3)
+            )
             print(row)
 
 
