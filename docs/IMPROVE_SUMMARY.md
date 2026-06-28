@@ -32,14 +32,14 @@
 
 ---
 
-## 독립검증에서 추가로 드러난 항목 (구현 안 함 — 제안으로 이관)
+## 독립검증에서 드러난 항목 → 후속 (C)로 **구현 완료** (커밋 `1c01783`)
 
-- **xai `generate_caregiver_message`의 `if rel > 0.6` 경고 방향**: P1-2 인덱스 수정으로 `rel`이
-  rhythm_regularity(높을수록 규칙적·양호)가 된 결과, "신호 품질 낮음 → 재측정" 경고가 *규칙성이 높을 때*
-  발화하는 내부 모순이 드러남. 단순히 `< 0.6`으로 뒤집는 것이 정답인지는 **저자 의도 검증 불가**:
-  (a) 임계값 0.6의 적정성, (b) pred==2(부정맥) 분기에서는 낮은 규칙성이 임상적으로 *정상*이라 "재측정"
-  경고 자체가 부적절할 수 있음. → **추측 배제, `IMPROVE_PROPOSALS.md`에 후속 결정 항목으로 기록.**
-  (인덱스 수정은 SSOT상 명백히 옳고 handoff의 '항상 발화' 버그를 제거하므로 유지.)
+- **xai `generate_caregiver_message` 경고 로직**: P1-2 인덱스 수정이 `if rel > 0.6` 경고의 모순
+  (rhythm_regularity[임상 리듬규칙성]를 '신호 품질'로 오용 → 규칙성 높을 때 "품질 낮음" 발화)을 드러냄.
+  → **해결**: 경고를 rhythm_regularity 대신 **판정 주도 모달의 per-modality confidence**(`dom_conf < 0.5`)
+  기반으로 교체. 포폴 슬라이드8 ④ NL "[caution] per-modality confidence %"와 정합. 부정맥(낮은 규칙성=정상)
+  진양성에 재측정 경고가 뜨던 문제도 제거. 신규 테스트(저확신→경고/고확신→무경고, rhythm 0.9 회귀가드) 통과.
+  (off-by-one 인덱스 수정 자체는 SSOT상 명백히 옳아 유지.)
 
 ---
 
@@ -48,4 +48,4 @@
 - P1-1 정준 데이터셋 버전(vf/v1) 기본값 정렬
 - P2-4 `train_fusion.py --model` 기본값(gated → cross_attn)
 - 의존성 핀(requirements) — 관측된 작동 환경 기록
-- xai 경고 임계 방향(위 항목)
+- ~~xai 경고 임계 방향~~ → **(C)로 구현 완료**(per-modality confidence 기반, 커밋 `1c01783`)
