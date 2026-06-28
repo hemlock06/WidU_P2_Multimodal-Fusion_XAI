@@ -26,6 +26,20 @@ _CLASS_PRIMARY_MOD = [None, "IMU", "ECG", "IMU", "SpO2"]
 # ecg_aux: 0-4 cardiac_probs, 5 emergency_score, 6 hr_bpm, 7 rhythm_regularity
 
 
+def _parse_ecg_aux(aux: np.ndarray) -> tuple[int, float, float]:
+    """단일 ecg_aux 벡터[8] → (cardiac_idx, emergency_score, rhythm_regularity).
+
+    SSOT는 schema.flat_ecg_aux: idx 0-4 cardiac_probs, 5 emergency_score,
+    6 hr_bpm, 7 rhythm_regularity. 신호 신뢰도 지표는 rhythm_regularity(idx 7)이며
+    hr_bpm(idx 6)이 아니다 — 두 인덱스 혼동 시 신뢰도가 raw bpm으로 잘못 읽힌다.
+    """
+    aux = np.asarray(aux)
+    cardiac_idx = int(np.argmax(aux[0:5]))
+    emergency_score = float(aux[5])
+    rhythm_regularity = float(aux[7])
+    return cardiac_idx, emergency_score, rhythm_regularity
+
+
 def _to_batch(arrays: dict[str, np.ndarray], device) -> dict[str, torch.Tensor]:
     return {
         k: torch.as_tensor(v, dtype=torch.float32, device=device)
@@ -299,8 +313,7 @@ def generate_combined_explanation(
 
     # 3. P1 ECG 임상 판독 (해석층 — 임베딩 대신 확률)
     aux = np.asarray(sample["ecg_aux"])
-    ci = int(np.argmax(aux[0:5]))
-    es, rel = float(aux[5]), float(aux[6])
+    ci, es, rel = _parse_ecg_aux(aux)
 
     dom = int(np.argmax(gate_w))
     lines = [f"[판정] {_CLASS_KO[pred]}"]
@@ -376,6 +389,12 @@ def _plain_features(feats_list, topk: int = 2):
     return out
 
 
+# 보호자 경고 임계: 판정을 주도한 모달의 per-modality confidence(= max softmax, 0~1; 5-class 균등=0.2)
+# 가 이 값 미만이면 "확신 낮음 → 재확인" 경고를 띄운다. 설계/임상 튜닝 가능한 상수.
+# (과거엔 rhythm_regularity[임상 리듬규칙성]를 '신호 품질'로 오용 → 부정맥에서 모순. 수정.)
+_LOW_MODALITY_CONF = 0.5
+
+
 def generate_caregiver_message(
     model, sample: dict[str, np.ndarray], device, steps: int = 64
 ) -> str:
@@ -387,7 +406,11 @@ def generate_caregiver_message(
     gw, cf, ul, pr = collect_gate(model, one, device)
     pred = int(pr[0])
     aux = np.asarray(sample["ecg_aux"])
-    ci, rel = int(np.argmax(aux[0:5])), float(aux[6])
+    ci, _es, _rel = _parse_ecg_aux(aux)
+    # 경고는 '판정을 주도한 모달의 confidence' 기반 (포폴 슬라이드8 ④ NL: [caution] per-modality
+    # confidence %). dom = 어텐션 최다 수신 모달, dom_conf = 그 모달의 unimodal max-softmax 확신도.
+    dom = int(np.argmax(gw[0]))
+    dom_conf = float(cf[0][dom])
 
     head = {
         0: "이상 징후 없음",
@@ -421,9 +444,9 @@ def generate_caregiver_message(
         )
     elif pred == 2:
         lines.append(f"심전도에서 {_CARDIAC_PLAIN[ci]} 소견이 나타났습니다.")
-        if rel > 0.6:
+        if dom_conf < _LOW_MODALITY_CONF:
             lines.append(
-                "다만 측정 신호 품질이 낮아 정확하지 않을 수 있습니다 — 안정 후 재측정을 권합니다."
+                "다만 판정을 주도한 신호의 확신도가 낮아 정확하지 않을 수 있습니다 — 안정 후 재측정·재확인을 권합니다."
             )
 
     lines.append("→ " + _CAREGIVER_ACTION[pred])
